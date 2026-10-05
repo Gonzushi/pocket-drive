@@ -25,3 +25,11 @@ Screenshots show sample files uploaded during an isolated browser test. The deli
 The Dockerfile's standalone server was exercised locally. A Docker image build and deployment on your Biznet/Coolify server were not performed because that server was not connected to this session. Follow COOLIFY.md and verify a small upload/download after deployment.
 
 Resumable API checks cover exact quota reservations, idempotent creation and completion, permission and Origin checks, durable offsets across a server restart, wrong-offset rejection, oversized-chunk rollback, actual interrupted request bodies, exclusive request leases, cancellation cleanup, fencing late creates after cancellation, 24-hour expiry cleanup, and recovery after a crash between file rename and metadata publication, including zero-byte files. Browser refresh testing used a twelve-file batch including a 10 MiB file; the largest configured 1 GB file and a full 5,000-file batch were not transferred during validation. Browser storage quotas and eviction depend on the user's browser/device.
+
+## Preview update
+
+The production build and all 39 tests pass, including nine new API subtests for read authorization, safe source text, UTF-16 decoding, truncation, verified inline MIME types, ranges/HEAD, unchanged downloads, XLSX validation, bounded ZIP listings, damaged archives, decompression limits, and unchanged storage metadata/quota.
+
+Chromium browser checks cover filename/menu entry, code highlighting, safe HTML/Markdown, image loading, PDF page navigation/zoom and corrupt-file fallback, XLSX sheet tabs, CSV quoting/source mode, ZIP filtering, audio/video metadata loading, unsupported formats, large text, keyboard navigation, and desktop/mobile layouts. Preview screenshots are under `docs/screenshots/preview-*`. Playback compatibility still depends on the browser codec. No Word/PowerPoint conversion worker is included in this stage.
+
+The final preview browser check also verifies image zoom/fit, exact scroll restoration on close, and a 10 MiB background upload completing while a preview is open. The Turbopack development smoke check passes with duplicate preload hooks retained once. The runtime dependency audit reports zero known advisories for the locked dependency tree.

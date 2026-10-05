@@ -170,7 +170,7 @@ export async function deleteFile(id: string) {
   await rm(filePath(id), { force: true });
   db().prepare('DELETE FROM files WHERE id = ? AND deleting = 1').run(id);
 }
-export async function download(req: Request, file: StoredFile) {
+export async function download(req: Request, file: StoredFile, preview?: { mime: string; inline: boolean }) {
   let start = 0; let end = file.size - 1; let status = 200;
   const range = req.headers.get('range');
   if (range) {
@@ -186,8 +186,8 @@ export async function download(req: Request, file: StoredFile) {
   try { handle = await open(filePath(file.id), 'r'); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new HttpError(404, 'This file is missing from disk. Restore it from a backup.'); throw error; }
   const headers = new Headers({
-    'Content-Type': 'application/octet-stream', 'Content-Length': String(file.size ? end - start + 1 : 0),
-    'Content-Disposition': `attachment; filename="download"; filename*=UTF-8''${encodeURIComponent(file.name).replace(/['()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase())}`,
+    'Content-Type': preview?.mime || 'application/octet-stream', 'Content-Length': String(file.size ? end - start + 1 : 0),
+    'Content-Disposition': `${preview?.inline ? 'inline' : 'attachment'}; filename="download"; filename*=UTF-8''${encodeURIComponent(file.name).replace(/['()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase())}`,
     'Accept-Ranges': 'bytes', 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff'
   });
   if (status === 206) headers.set('Content-Range', `bytes ${start}-${end}/${file.size}`);

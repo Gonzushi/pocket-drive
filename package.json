@@ -2,27 +2,44 @@
   "name": "pocket-drive",
   "version": "1.0.0",
   "private": true,
-  "engines": { "node": ">=24.13.0 <25" },
+  "engines": {
+    "node": ">=24.13.0 <25"
+  },
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "next build --webpack && node scripts/prepare-standalone.mjs",
     "start": "node .next/standalone/server.js",
     "typecheck": "tsc --noEmit",
     "setup": "node scripts/setup.mjs",
-    "test": "node --test tests/node-options.mjs tests/sqlite-warning.mjs tests/zip.mjs tests/integration.mjs"
+    "test": "node --test tests/node-options.mjs tests/sqlite-warning.mjs tests/zip.mjs tests/integration.mjs tests/preview.mjs",
+    "predev": "node scripts/prepare-preview.mjs",
+    "prebuild": "node scripts/prepare-preview.mjs"
   },
   "dependencies": {
     "busboy": "1.6.0",
+    "exceljs": "4.4.0",
+    "highlight.js": "11.12.0",
     "lucide-react": "0.577.0",
     "next": "16.3.8",
+    "papaparse": "5.7.0",
+    "pdfjs-dist": "6.4.299",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1",
+    "yauzl": "3.4.0"
   },
   "devDependencies": {
     "@types/busboy": "^1.5.4",
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/yauzl": "3.4.0",
     "typescript": "^5.9.0"
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "11.1.1"
+    }
   }
 }

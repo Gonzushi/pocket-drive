@@ -5,3 +5,4 @@ node_modules/
 storage/
 *.tsbuildinfo
 test-results/
+public/preview-assets/

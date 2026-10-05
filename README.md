@@ -97,7 +97,7 @@ storage/
 
 Keep the entire directory on one persistent, local filesystem. Run **one application instance** with this mount. Disable rolling deployments so old and new instances do not upload simultaneously during a deployment. Do not run this on serverless hosting or a static site host.
 
-The app never executes uploaded files. It always serves downloads as attachments with `application/octet-stream`, including HTML and SVG. Original filenames are display metadata; generated IDs determine disk paths.
+The app never executes uploaded files. Normal downloads remain attachments with `application/octet-stream`. The authenticated preview API serves verified images, PDFs, and media inline; HTML, SVG, XML, and code are displayed as inert text. Original filenames are display metadata; generated IDs determine disk paths.
 
 ## Checks
 
@@ -130,3 +130,11 @@ One private workspace and administrator, with files and folders stored on your V
 - [Web Locks (coordination between tabs)](https://developer.mozilla.org/en-US/docs/Web/API/Web_Locks_API)
 - [Browser storage quotas and eviction](https://developer.mozilla.org/en-US/docs/Web/API/Storage_API/Storage_quotas_and_eviction_criteria)
 - [Coolify bind mounts](https://coolify.io/docs/core/persistent-storage/storage-mounts/bind-mounts)
+
+## File previews
+
+Click a filename or choose **⋯ → Preview**. The preview overlay includes Previous/Next file navigation, Escape to close, arrow-key navigation, and a Download button. Desktop previews preserve your folder and scroll position; mobile previews fill the screen. Navigation covers the files currently loaded in the list.
+
+Supported viewers include JPG/PNG/GIF/WebP/AVIF/BMP images with zoom/fit, paged PDFs with zoom, plain text and common source files, safe formatted Markdown, CSV/TSV tables, read-only XLSX sheet tabs, browser-compatible audio/video, and ZIP contents. Other formats show file details and Download. Spreadsheet formulas are not recalculated and workbook formatting is not reproduced. Word, PowerPoint, older Office formats, and proprietary formats are pending the second-stage conversion worker; see [the preview guide](docs/PREVIEWS.md).
+
+Tables parse in a cancellable background worker. Viewers and preview libraries load only when opened. Local PDF/table assets are generated before `npm run dev` and `npm run build`, and are included in the standalone Docker server. No external document-viewer service is used.

@@ -8,6 +8,7 @@ import { childFolders, createFolder, folderDetails, markFolderForDeletion, paren
 import { folderTree, markItemsForDeletion, moveItems, renameItem } from './items';
 import { downloadFolder, downloadItems } from './folder-download';
 import { beginUpload, cancelUpload, finishUpload, uploadChunk, uploadStatus } from './resumable';
+import { archiveEntries, previewContent, previewInfo, previewText } from './preview';
 
 export async function dispatch(req: Request, segments: string[]): Promise<Response> {
   try {
@@ -75,6 +76,14 @@ export async function dispatch(req: Request, segments: string[]): Promise<Respon
     }
     if (segments[0] === 'files' && validId(segments[1] || '')) {
       const id = segments[1];
+      if (segments[2] === 'preview' && ['GET', 'HEAD'].includes(method) && segments.length >= 3 && segments.length <= 4) {
+        authorize(req); const file = fileById(id); if (!file) throw new HttpError(404, 'File not found.');
+        if (segments.length === 3) return previewInfo(file);
+        if (segments[3] === 'content') return await previewContent(req, file);
+        if (segments[3] === 'text') return await previewText(file);
+        if (segments[3] === 'archive' && file.name.toLowerCase().endsWith('.zip')) return json(await archiveEntries(req, file));
+        throw new HttpError(415, 'This format cannot use that preview viewer.');
+      }
       if (segments.length === 2 && method === 'PATCH') { authorize(req, 'upload'); const data = await body(req); return json(renameItem({ type: 'file', id }, data.name)); }
       if (segments.length === 3 && segments[2] === 'download' && ['GET', 'HEAD'].includes(method)) {
         authorize(req); const file = fileById(id); if (!file) throw new HttpError(404, 'File not found.'); return await download(req, file);

@@ -221,6 +221,24 @@ curl --fail-with-body "$POCKET_DRIVE_URL/api/files/FILE_ID/download" \
 
 ## Delete
 
+## File previews
+
+All preview endpoints require the same **read** permission as downloads. They are private, read-only, and do not change the file or storage quota.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/files/{id}/preview` | Viewer type, extension, supported status, and fallback reason |
+| `GET /api/files/{id}/preview/content` | Inline image, PDF, audio/video, or bounded XLSX bytes |
+| `HEAD /api/files/{id}/preview/content` | Validate access/content and return headers without file bytes |
+| `GET /api/files/{id}/preview/text` | JSON with `text`, `encoding`, `truncated`, and `limit_bytes` |
+| `GET /api/files/{id}/preview/archive` | ZIP entry names, sizes, directory/encryption flags, total, and truncation status |
+
+Inline media/PDF responses use verified file signatures, a fixed MIME allowlist, `nosniff`, private no-store caching, and the existing single-byte-range support. The normal `/download` route still returns an attachment with `application/octet-stream`. Client-supplied MIME values are never trusted to enable active content. HTML, SVG, XML, and code are displayed as inert text; they are never embedded as uploaded pages.
+
+Text reads are capped at 512 KiB and decoded as UTF-8 or BOM-marked UTF-16. Binary text returns `415`. ZIP lists are capped at 1,000 entries and do not extract archive contents. XLSX content is capped at 10 MiB; its archive is validated with at most 1,000 entries, 16 MiB per decompressed entry, 32 MiB total decompressed content, and a ten-second deadline. Encrypted, macro-enabled, malformed, or oversized workbooks are rejected. Images have a 25 MiB preview cap; PDFs have a 100 MiB cap. Media remains streamed and browser codec support determines playback.
+
+Unsupported formats still have file metadata and the normal authenticated download route. `413` indicates a size/complexity limit; `415` indicates an unsupported preview or signature mismatch; `422` indicates a damaged/unreadable archive. The UI provides a fallback or retry action.
+
 `DELETE /api/files/{id}` — requires **delete** permission, which is off by default for new keys.
 
 ```bash
