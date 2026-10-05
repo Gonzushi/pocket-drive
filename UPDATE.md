@@ -1,8 +1,10 @@
 # Update an existing local Pocket Drive
 
-This update adds **refresh-safe uploads** for files and folders, overall and per-file progress, persistent pause/resume, automatic connection retries, and a compact upload panel that stays visible across the workspace. Batches of more than five files start collapsed; expanding them shows a fixed-height scrolling list. Completed files are never duplicated when recovering the same saved queue. Keep the tab open during the initial **Preparing uploads** step; once that finishes, refresh or reopen the app in the same browser to continue.
+This update removes the “Upload your way” card from the sidebar on both My files and API keys. Sign out remains at the bottom on desktop.
 
-It retains folder navigation and moves, folder/selection ZIP downloads, the compact header, the fixed sidebar card, and the Node preload and SQLite notice fixes. There are no dependency changes. The database adds an upload-session table automatically without changing existing file content, login credentials, or API keys.
+It includes **refresh-safe uploads** for files and folders, overall and per-file progress, persistent pause/resume, automatic connection retries, and a compact upload panel that stays visible across the workspace. Batches of more than five files start collapsed; expanding them shows a fixed-height scrolling list. Completed files are never duplicated when recovering the same saved queue. Keep the tab open during the initial **Preparing uploads** step; once that finishes, refresh or reopen the app in the same browser to continue.
+
+It retains folder navigation and moves, folder/selection ZIP downloads, the compact header, the sidebar navigation, and the Node preload and SQLite notice fixes. There are no dependency changes. The database adds an upload-session table automatically without changing existing file content, login credentials, or API keys.
 
 1. Stop the running app with **Control + C**.
 2. Extract the updated ZIP into a separate folder.

@@ -6,7 +6,7 @@ Validated on 2026-10-05 with Node.js 24.19.0.
 - All 29 test results passed, covering the standalone production API, Node preload normalization, and the selective SQLite notice filter.
 - Browser checks passed for administrator login, the initial empty state, multiple file uploads, folder creation, nested directory uploads, breadcrumb navigation, Back/Forward/Up and native browser history, desktop/mobile folder trees, scroll restoration on return, multi-selection, batch moves, destination folder creation, renaming, bulk deletion, filename search, type filters, authenticated file, folder, and selection ZIP downloads, compact header/storage overview, delete confirmation/cancellation, recursive folder deletion, API-key generation, key revocation, and logout.
 - Resumable browser checks passed for refreshing after one committed chunk, resuming from that offset, recovering a lost final acknowledgement without duplication, pause persistence, offline/online retries, navigation to API keys during upload, bounded virtualized file lists, cross-tab worker coordination and cancellation, and releasing cached sources after completion.
-- The sidebar card stays at the same desktop position when switching between My files and API keys, including direct navigation through Explore the API.
+- The sidebar promotional card has been removed from My files and API keys. The production build and targeted browser checks pass at 1440, 950, and 390 px, including desktop footer positioning and mobile layout.
 - Desktop (1440 px) and mobile (390 px) browser checks reported no page errors or horizontal overflow. Screenshots are under `docs/screenshots`.
 - Runtime dependency audit reported zero known vulnerabilities at validation time.
 
