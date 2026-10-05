@@ -119,7 +119,7 @@ To reset your password, run `npm run setup` in a fresh local checkout, save the 
 
 ## Scope of this first version
 
-One private workspace and administrator, with files and folders stored on your VPS. Public sharing, multiple accounts, dragging existing items between folders, cut/paste shortcuts, automatic external backups, previews, and an S3-compatible API are not included. The REST API is documented in API.md.
+One private workspace and administrator, with files and folders stored on your VPS. Public sharing, multiple accounts, dragging existing items between folders, cut/paste shortcuts, automatic external backups and an S3-compatible API are not included. The REST API is documented in API.md.
 
 ## Technical references
 
@@ -133,8 +133,8 @@ One private workspace and administrator, with files and folders stored on your V
 
 ## File previews
 
-Click a filename or choose **⋯ → Preview**. The preview overlay includes Previous/Next file navigation, Escape to close, arrow-key navigation, and a Download button. Desktop previews preserve your folder and scroll position; mobile previews fill the screen. Navigation covers the files currently loaded in the list.
+Click a filename or choose **⋯ → Preview**. The preview overlay includes Previous/Next file navigation, Escape to close, arrow-key navigation, and a Download button. Desktop previews preserve your folder and scroll position; mobile previews fill the screen. Navigation follows your current search, filter, and sort and loads more files as you reach the end. Use Expand and File details to adjust the workspace.
 
-Supported viewers include JPG/PNG/GIF/WebP/AVIF/BMP images with zoom/fit, paged PDFs with zoom, plain text and common source files, safe formatted Markdown, CSV/TSV tables, read-only XLSX sheet tabs, browser-compatible audio/video, and ZIP contents. Other formats show file details and Download. Spreadsheet formulas are not recalculated and workbook formatting is not reproduced. Word, PowerPoint, older Office formats, and proprietary formats are pending the second-stage conversion worker; see [the preview guide](docs/PREVIEWS.md).
+Supported viewers include images with zoom/rotation/panning, selectable/searchable PDFs with thumbnails, a read-only code editor with folding/search/themes/line navigation, formatted Markdown, searchable/sortable CSV/TSV/XLSX tables, cached DOCX/PPTX/ODT/ODP conversion, fast-start video with a 720p option, audio controls, and ZIP contents. Original downloads stay unchanged. Redeploy with the updated Dockerfile for conversion tools; keep the persistent storage mount. See [the preview guide](docs/PREVIEWS.md) for limits and deployment details.
 
 Tables parse in a cancellable background worker. Viewers and preview libraries load only when opened. Local PDF/table assets are generated before `npm run dev` and `npm run build`, and are included in the standalone Docker server. No external document-viewer service is used.

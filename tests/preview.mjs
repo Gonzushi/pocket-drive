@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { spawn, execFileSync } from 'node:child_process';
+import { mkdtemp, rm, readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes, scryptSync } from 'node:crypto';
@@ -13,7 +13,9 @@ test('authenticated bounded previews', {timeout:120000}, async t => {
   const root = await mkdtemp(join(tmpdir(), 'pocket-preview-'));
   const probe = createServer(); await new Promise(resolve => probe.listen(0,'127.0.0.1',resolve)); const port=probe.address().port; await new Promise(resolve => probe.close(resolve));
   const origin = `http://127.0.0.1:${port}`; const password=randomBytes(24).toString('hex'); const salt=randomBytes(16).toString('hex');
-  const child=spawn(process.execPath,['.next/standalone/server.js'],{env:{...process.env,NODE_ENV:'production',HOSTNAME:'127.0.0.1',PORT:String(port),APP_ORIGIN:origin,STORAGE_PATH:root,MIN_FREE_DISK_BYTES:'0',ADMIN_USERNAME:'admin',ADMIN_PASSWORD_HASH:`scrypt:${salt}:${scryptSync(password,salt,64).toString('hex')}`,SESSION_SECRET:randomBytes(32).toString('hex')},stdio:['ignore','pipe','pipe']});
+  const sessionSecret=randomBytes(32).toString('hex');
+  const launch=()=>spawn(process.execPath,['.next/standalone/server.js'],{env:{...process.env,NODE_ENV:'production',HOSTNAME:'127.0.0.1',PORT:String(port),APP_ORIGIN:origin,STORAGE_PATH:root,MIN_FREE_DISK_BYTES:'0',ADMIN_USERNAME:'admin',ADMIN_PASSWORD_HASH:`scrypt:${salt}:${scryptSync(password,salt,64).toString('hex')}`,SESSION_SECRET:sessionSecret},stdio:['ignore','pipe','pipe']});
+  let child=launch(); let preparedDocument;
   let logs=''; child.stdout.on('data',d=>logs+=d);child.stderr.on('data',d=>logs+=d);
   t.after(async()=>{ if(child.exitCode===null){const exit=new Promise(resolve=>child.once('exit',resolve));child.kill('SIGTERM');await exit;}await rm(root,{recursive:true,force:true});});
   for(let i=0;i<150;i++){try{if((await fetch(origin+'/api/health')).ok)break;}catch{}if(child.exitCode!==null)throw new Error(logs);await new Promise(resolve=>setTimeout(resolve,100));}
@@ -71,6 +73,71 @@ test('authenticated bounded previews', {timeout:120000}, async t => {
   });
   await t.test('workbook decompression limits stop oversized contents',async()=>{
     const archive=new JSZip();archive.file('xl/workbook.xml','<workbook/>');for(let i=0;i<3;i++)archive.file(`xl/worksheets/sheet${i}.xml`,Buffer.alloc(12*1024*1024,65));const bomb=await upload('large.xlsx',await archive.generateAsync({type:'nodebuffer',compression:'DEFLATE'}));assert.equal((await session(`/api/files/${bomb.id}/preview/content`)).status,413);
+  });
+  await t.test('prepared previews enforce auth, origin, and bounded conversion',async()=>{
+    const file = await upload('broken.docx', 'not a document');
+    const endpoint = '/api/files/'+file.id+'/preview/prepare';
+    for (const suffix of ['/prepare','/prepared']) {
+      assert.equal((await fetch(origin+'/api/files/'+file.id+'/preview'+suffix)).status,401);
+      assert.equal((await fetch(origin+'/api/files/'+file.id+'/preview'+suffix,{headers:{Authorization:'Bearer '+uploadKey}})).status,403);
+    }
+    assert.equal((await session(endpoint,{method:'POST',headers:{Origin:'https://untrusted.example'}})).status,403);
+    assert.equal((await(await session(endpoint)).json()).status,'idle');
+    assert.equal((await session(endpoint+'?variant=unknown',{method:'POST'})).status,415);
+    assert.equal((await fetch(origin+endpoint,{method:'POST',headers:{Authorization:'Bearer '+readKey}})).status,202);
+    for(let i=0;i<100;i++) { const status=await(await session(endpoint)).json(); if(status.status==='failed') { assert.match(status.error,/damaged|protected/); break; } if(i===99)assert.fail('Conversion did not fail safely'); await new Promise(resolve=>setTimeout(resolve,100)); }
+    const external = new JSZip(); external.file('word/_rels/document.xml.rels','<Relationships><Relationship TargetMode="External" Target="http://example.invalid/private"/></Relationships>');
+    const linked = await upload('external.docx',await external.generateAsync({type:'nodebuffer'}));
+    const linkedEndpoint='/api/files/'+linked.id+'/preview/prepare';await session(linkedEndpoint,{method:'POST'});
+    for(let i=0;i<100;i++){const status=await(await session(linkedEndpoint)).json();if(status.status==='failed'){assert.match(status.error,/external links/);break;}if(i===99)assert.fail('External content not rejected');await new Promise(resolve=>setTimeout(resolve,100));}
+  });
+  await t.test('video preparation puts metadata first, supports seeking, and preserves originals',async()=>{
+    const source = join(root,'fixture.mp4');
+    execFileSync('ffmpeg',['-nostdin','-v','error','-f','lavfi','-i','testsrc2=size=1600x900:rate=12:duration=3','-c:v','libx264','-threads','2','-pix_fmt','yuv420p',source]);
+    const bytes=await readFile(source); assert(bytes.indexOf('moov')>bytes.indexOf('mdat'));
+    const file=await upload('stream.mp4',bytes); const before=await(await session('/api/storage')).json();
+    for(const variant of ['stream','mobile']){
+      const endpoint='/api/files/'+file.id+'/preview/prepare?variant='+variant;
+      assert.equal((await session(endpoint,{method:'POST'})).status,202);
+      let ready;
+      for(let i=0;i<600;i++){const status=await(await session(endpoint)).json();if(status.status==='ready'){ready=status;break;}if(status.status==='failed')assert.fail(status.error);await new Promise(resolve=>setTimeout(resolve,100));}
+      assert(ready,'Video preparation did not finish');
+      const response=await session(ready.url);assert.equal(response.headers.get('content-type'),'video/mp4');assert.equal(response.headers.get('cache-control'),'private, no-store');const result=Buffer.from(await response.arrayBuffer());assert(result.indexOf('moov')<result.indexOf('mdat'));
+      const range=await session(ready.url,{headers:{Range:'bytes=0-65535'}});assert.equal(range.status,206);assert.equal((await range.arrayBuffer()).byteLength,Math.min(result.length,65536));
+      const suffix=await session(ready.url,{headers:{Range:'bytes=-32'}});assert.deepEqual(Buffer.from(await suffix.arrayBuffer()),result.subarray(-32));
+      assert.equal((await session(ready.url,{method:'HEAD'})).headers.get('content-length'),String(result.length));
+      assert.equal((await session(ready.url,{headers:{Range:'bytes=999999999-'}})).status,416);
+      assert.equal((await session(endpoint,{method:'POST'})).status,200);
+      if(variant==='mobile'){const cached=(await readdir(join(root,'previews'))).filter(name=>name.endsWith('.mp4'));let small=false;for(const name of cached){const probe=JSON.parse(execFileSync('ffprobe',['-v','error','-show_entries','stream=width,height,codec_name','-of','json',join(root,'previews',name)]).toString());if(probe.streams.some(s=>s.width<=1280&&s.height<=720&&s.codec_name==='h264'))small=true;}assert(small,'720p H.264 derivative missing');}
+    }
+    assert.deepEqual(Buffer.from(await(await session('/api/files/'+file.id+'/download')).arrayBuffer()),bytes);
+    assert.equal((await(await session('/api/storage')).json()).used_bytes,before.used_bytes);
+    assert.equal((await session('/api/files/'+file.id,{method:'DELETE'})).status,200);
+    assert(!(await readdir(join(root,'previews'))).some(name=>/\.(pdf|mp4)$/.test(name)));
+  });
+  await t.test('Office document converts to a cached PDF',async()=>{
+    const archive=new JSZip();
+    archive.file('[Content_Types].xml','<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>');
+    archive.file('_rels/.rels','<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>');
+    archive.file('word/document.xml','<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Pocket Drive document preview</w:t></w:r></w:p></w:body></w:document>');
+    const file=await upload('document.docx',await archive.generateAsync({type:'nodebuffer'}));
+    assert.equal((await(await session('/api/files/'+file.id+'/preview')).json()).kind,'office');
+    const endpoint='/api/files/'+file.id+'/preview/prepare';await session(endpoint,{method:'POST'});
+    let ready;for(let i=0;i<600;i++){const status=await(await session(endpoint)).json();if(status.status==='ready'){ready=status;break;}if(status.status==='failed')assert.fail(status.error);await new Promise(resolve=>setTimeout(resolve,100));}
+    assert(ready,'Document preparation did not finish'); const pdf=await session(ready.url);assert.equal(pdf.headers.get('content-type'),'application/pdf');assert(Buffer.from(await pdf.arrayBuffer()).subarray(0,5).equals(Buffer.from('%PDF-')));preparedDocument={id:file.id,url:ready.url};
+  });
+  await t.test('cached previews survive restarts and interrupted jobs recover',async()=>{
+    const before=Buffer.from(await(await session(preparedDocument.url)).arrayBuffer());
+    const exit=new Promise(resolve=>child.once('exit',resolve));child.kill('SIGTERM');await exit;
+    const {DatabaseSync}=await import('node:sqlite');const database=new DatabaseSync(join(root,'metadata.sqlite'));
+    const file=await database.prepare("SELECT id FROM files WHERE name='broken.docx'").get();
+    database.prepare("UPDATE preview_jobs SET status='running',expires=?,error=NULL WHERE file_id=?").run(Date.now()+999999,file.id);database.close();
+    child=launch();child.stdout.on('data',d=>logs+=d);child.stderr.on('data',d=>logs+=d);
+    for(let i=0;i<150;i++){try{if((await fetch(origin+'/api/health')).ok)break;}catch{}if(child.exitCode!==null)throw new Error(logs);await new Promise(resolve=>setTimeout(resolve,100));}
+    const status=await(await session('/api/files/'+preparedDocument.id+'/preview/prepare')).json();assert.equal(status.status,'ready');assert.equal(status.url,preparedDocument.url);
+    assert.deepEqual(Buffer.from(await(await session(preparedDocument.url)).arrayBuffer()),before);
+    const interrupted=await(await session('/api/files/'+file.id+'/preview/prepare')).json();assert.equal(interrupted.status,'failed');assert.match(interrupted.error,/interrupted/);
+    assert.equal((await session('/api/files/'+file.id+'/preview/prepare',{method:'POST'})).status,202);
   });
   await t.test('previewing does not change file IDs, names, contents or quota',async()=>{
     const before=await(await session('/api/storage')).json();const metadata=await(await session(`/api/files/${code.id}`)).json();await session(`/api/files/${code.id}/preview/text`);assert.deepEqual(await(await session(`/api/files/${code.id}`)).json(),metadata);assert.equal((await(await session('/api/storage')).json()).used_bytes,before.used_bytes);

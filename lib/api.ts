@@ -10,6 +10,7 @@ import { downloadFolder, downloadItems } from './folder-download';
 import { beginUpload, cancelUpload, finishUpload, uploadChunk, uploadStatus } from './resumable';
 import { archiveEntries, previewContent, previewInfo, previewText } from './preview';
 import { listFiles } from './listing';
+import { preparedStatus, preparedContent } from './preview-cache';
 
 export async function dispatch(req: Request, segments: string[]): Promise<Response> {
   try {
@@ -64,10 +65,16 @@ export async function dispatch(req: Request, segments: string[]): Promise<Respon
     }
     if (segments[0] === 'files' && validId(segments[1] || '')) {
       const id = segments[1];
+      if (segments.length === 4 && segments[2] === 'preview' && segments[3] === 'prepare' && ['GET', 'POST'].includes(method)) {
+        authorize(req); const file = fileById(id); if (!file) throw new HttpError(404, 'File not found.');
+        const status = await preparedStatus(file, new URL(req.url).searchParams.get('variant') || 'document', method === 'POST');
+        return json(status, status.status === 'running' ? 202 : 200);
+      }
       if (segments[2] === 'preview' && ['GET', 'HEAD'].includes(method) && segments.length >= 3 && segments.length <= 4) {
         authorize(req); const file = fileById(id); if (!file) throw new HttpError(404, 'File not found.');
         if (segments.length === 3) return previewInfo(file);
         if (segments[3] === 'content') return await previewContent(req, file);
+        if (segments[3] === 'prepared') return await preparedContent(req, file);
         if (segments[3] === 'text') return await previewText(file);
         if (segments[3] === 'archive' && file.name.toLowerCase().endsWith('.zip')) return json(await archiveEntries(req, file));
         throw new HttpError(415, 'This format cannot use that preview viewer.');

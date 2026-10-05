@@ -236,6 +236,11 @@ All preview endpoints require the same **read** permission as downloads. They ar
 | `HEAD /api/files/{id}/preview/content` | Validate access/content and return headers without file bytes |
 | `GET /api/files/{id}/preview/text` | JSON with `text`, `encoding`, `truncated`, and `limit_bytes` |
 | `GET /api/files/{id}/preview/archive` | ZIP entry names, sizes, directory/encryption flags, total, and truncation status |
+| `GET /api/files/{id}/preview/prepare?variant=document\|stream\|mobile` | Check preparation status without starting a job |
+| `POST /api/files/{id}/preview/prepare?variant=document\|stream\|mobile` | Start/reuse a bounded conversion job; read permission and browser origin checks |
+| `GET/HEAD /api/files/{id}/preview/prepared?variant=...` | Authenticated cached PDF/MP4, with byte-range support |
+
+Preparation responses contain `status` (`idle`, `running`, `ready`, or `failed`), `url`, and `error`. Running jobs return `202`, other states `200`, and queue saturation `429`. Document conversion supports DOCX/PPTX/ODT/ODP up to 20 MiB. Video variants produce fast-start MP4 and an optional 720p H.264/AAC version. Original downloads stay unchanged. Previews consume disk space outside the upload quota; see [conversion tools, limits, and cache policy](docs/PREVIEWS.md).
 
 Inline media/PDF responses use verified file signatures, a fixed MIME allowlist, `nosniff`, private no-store caching, and the existing single-byte-range support. The normal `/download` route still returns an attachment with `application/octet-stream`. Client-supplied MIME values are never trusted to enable active content. HTML, SVG, XML, and code are displayed as inert text; they are never embedded as uploaded pages.
 

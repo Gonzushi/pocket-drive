@@ -53,6 +53,7 @@ export async function cleanup() {
   }
   const deleting = db().prepare('SELECT id FROM files WHERE deleting = 1').all() as { id: string }[];
   for (const row of deleting) {
+    await import('./preview-cache').then(module => module.removePrepared(row.id));
     await rm(filePath(row.id), { force: true });
     db().prepare('DELETE FROM files WHERE id = ? AND deleting = 1').run(row.id);
   }
@@ -167,10 +168,11 @@ export async function upload(req: Request) {
 }
 export async function deleteFile(id: string) {
   db().prepare('UPDATE files SET deleting = 1 WHERE id = ?').run(id);
+  await import('./preview-cache').then(module => module.removePrepared(id));
   await rm(filePath(id), { force: true });
   db().prepare('DELETE FROM files WHERE id = ? AND deleting = 1').run(id);
 }
-export async function download(req: Request, file: StoredFile, preview?: { mime: string; inline: boolean }) {
+export async function download(req: Request, file: StoredFile, preview?: { mime: string; inline: boolean; path?: string; etag?: string }) {
   let start = 0; let end = file.size - 1; let status = 200;
   const range = req.headers.get('range');
   if (range) {
@@ -183,7 +185,7 @@ export async function download(req: Request, file: StoredFile, preview?: { mime:
     status = 206;
   }
   let handle;
-  try { handle = await open(filePath(file.id), 'r'); }
+  try { handle = await open(preview?.path || filePath(file.id), 'r'); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new HttpError(404, 'This file is missing from disk. Restore it from a backup.'); throw error; }
   const headers = new Headers({
     'Content-Type': preview?.mime || 'application/octet-stream', 'Content-Length': String(file.size ? end - start + 1 : 0),
@@ -191,7 +193,11 @@ export async function download(req: Request, file: StoredFile, preview?: { mime:
     'Accept-Ranges': 'bytes', 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff'
   });
   if (status === 206) headers.set('Content-Range', `bytes ${start}-${end}/${file.size}`);
+  if (preview?.etag) headers.set('ETag', `"${preview.etag}"`);
   if (req.method === 'HEAD' || !file.size) { await handle.close(); return new Response(null, { status, headers }); }
   const stream = handle.createReadStream({ start, end, autoClose: true });
+  const abort = () => stream.destroy(); req.signal.addEventListener('abort', abort, { once: true });
+  stream.once('close', () => req.signal.removeEventListener('abort', abort));
+  if (req.signal.aborted) stream.destroy();
   return new Response(Readable.toWeb(stream) as ReadableStream, { status, headers });
 }
