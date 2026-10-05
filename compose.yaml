@@ -1,0 +1,20 @@
+# Optional: deploy this Compose file instead of configuring a Coolify Dockerfile app.
+# Coolify manages the public domain and HTTPS; do not publish port 3000 on the host.
+services:
+  drive:
+    build: .
+    restart: unless-stopped
+    expose:
+      - "3000"
+    environment:
+      APP_ORIGIN: ${APP_ORIGIN:?Set your HTTPS origin}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:?Generate credentials first}
+      SESSION_SECRET: ${SESSION_SECRET:?Generate credentials first}
+      STORAGE_PATH: /app/storage
+      STORAGE_QUOTA_BYTES: ${STORAGE_QUOTA_BYTES:-20000000000}
+      MIN_FREE_DISK_BYTES: ${MIN_FREE_DISK_BYTES:-5000000000}
+      MAX_FILE_BYTES: ${MAX_FILE_BYTES:-1000000000}
+    volumes:
+      - /srv/file-storage:/app/storage
+    stop_grace_period: 30s

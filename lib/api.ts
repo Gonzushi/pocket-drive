@@ -1,0 +1,106 @@
+import { randomBytes, randomUUID } from 'node:crypto';
+import { authorize, checkOrigin, COOKIE, hashToken, login, sessionCookie, type Scope } from './auth';
+import { config } from './config';
+import { db, fileById, transaction } from './db';
+import { body, HttpError, json } from './http';
+import { cleanup, deleteFile, download, storageInfo, upload, validId } from './storage';
+import { childFolders, createFolder, folderDetails, markFolderForDeletion, parentId, trail } from './folders';
+import { folderTree, markItemsForDeletion, moveItems, renameItem } from './items';
+import { downloadFolder, downloadItems } from './folder-download';
+
+export async function dispatch(req: Request, segments: string[]): Promise<Response> {
+  try {
+    const route = segments.join('/'); const method = req.method;
+    if (route === 'health' && method === 'GET') { config(); db().prepare('SELECT 1').get(); return json({ status: 'ok' }); }
+    if (route === 'auth/login' && method === 'POST') {
+      checkOrigin(req); const data = await body(req); const token = await login(data.username, data.password);
+      const response = json({ success: true }); response.headers.set('Set-Cookie', sessionCookie(token)); return response;
+    }
+    if (route === 'auth/logout' && method === 'POST') {
+      checkOrigin(req);
+      const token = req.headers.get('cookie')?.split(';').map(v => v.trim()).find(v => v.startsWith(`${COOKIE}=`))?.slice(COOKIE.length + 1);
+      if (token && token.length < 100) db().prepare('DELETE FROM sessions WHERE hash = ?').run(hashToken(token));
+      const response = json({ success: true }); response.headers.set('Set-Cookie', sessionCookie('', true)); return response;
+    }
+    if (route === 'storage' && method === 'GET') { authorize(req); return json(await storageInfo()); }
+    if (route === 'folders/tree' && method === 'GET') { authorize(req); return json({ folders: folderTree() }); }
+    if (route === 'items/download' && ['GET', 'HEAD', 'POST'].includes(method)) {
+      authorize(req);
+      if (method === 'POST') { const data = await body(req); return await downloadItems(req, data.items); }
+      const value = new URL(req.url).searchParams.get('items') || '';
+      if (value.length > 4500) throw new HttpError(400, 'Select between 1 and 100 items.');
+      const items = value.split(',').map(part => { const [type, id, extra] = part.split(':'); return { type: extra === undefined ? type : '', id }; });
+      return await downloadItems(req, items);
+    }
+    if (route === 'items/move' && method === 'POST') { authorize(req, 'upload'); const data = await body(req); return json(moveItems(data.items, data.destination_id)); }
+    if (route === 'items/delete' && method === 'POST') { authorize(req, 'delete'); const data = await body(req); const deleted = markItemsForDeletion(data.items); await cleanup(); return json({ success: true, deleted }); }
+    if (route === 'files') {
+      if (method === 'POST') { authorize(req, 'upload'); return json(await upload(req), 201); }
+      if (method === 'GET') {
+        authorize(req);
+        const params = new URL(req.url).searchParams;
+        const q = (params.get('q') || '').slice(0, 200);
+        const folder = parentId(params.get('folder_id'));
+        const breadcrumbs = trail(folder).map(({ id, name }) => ({ id, name }));
+        const type = params.get('type') || 'all';
+        if (!['all', 'image', 'document', 'other'].includes(type)) throw new HttpError(400, 'Invalid file filter.');
+        const offset = Number(params.get('offset') || '0');
+        if (!Number.isSafeInteger(offset) || offset < 0) throw new HttpError(400, 'Invalid page.');
+        const pattern = '%' + q.replace(/[\\%_]/g, '\\$&') + '%';
+        const where = "deleting = 0 AND name LIKE ? ESCAPE '\\' AND (? = 'all' OR kind = ?) AND (? = 0 OR folder_id IS ?)";
+        const values = [pattern, type, type, params.has('folder_id') ? 1 : 0, folder];
+        const count = db().prepare(`SELECT COUNT(*) AS total FROM files WHERE ${where}`).get(...values) as { total: number };
+        const files = db().prepare(`SELECT id, name, size, mime_type, kind, checksum, created_at, folder_id FROM files WHERE ${where} ORDER BY created_at DESC, id DESC LIMIT 50 OFFSET ?`).all(...values, offset);
+        return json({ files, total: count.total, offset, limit: 50, folders: type === 'all' ? childFolders(folder, q) : [], breadcrumbs });
+      }
+    }
+    if (route === 'folders') {
+      if (method === 'GET') { authorize(req); const parent = parentId(new URL(req.url).searchParams.get('parent_id')); trail(parent); return json({ folders: childFolders(parent) }); }
+      if (method === 'POST') { authorize(req, 'upload'); const data = await body(req); return json(createFolder(data.name, parentId(data.parent_id)), 201); }
+    }
+    if (segments[0] === 'folders' && segments.length === 3 && validId(segments[1]) && segments[2] === 'download' && ['GET', 'HEAD'].includes(method)) { authorize(req); return await downloadFolder(req, segments[1]); }
+    if (segments[0] === 'folders' && segments.length === 2 && validId(segments[1])) {
+      if (method === 'PATCH') { authorize(req, 'upload'); const data = await body(req); return json(renameItem({ type: 'folder', id: segments[1] }, data.name)); }
+      if (method === 'GET') { authorize(req); return json(folderDetails(segments[1])); }
+      if (method === 'DELETE') { authorize(req, 'delete'); markFolderForDeletion(segments[1]); await cleanup(); return json({ success: true }); }
+    }
+    if (segments[0] === 'files' && validId(segments[1] || '')) {
+      const id = segments[1];
+      if (segments.length === 2 && method === 'PATCH') { authorize(req, 'upload'); const data = await body(req); return json(renameItem({ type: 'file', id }, data.name)); }
+      if (segments.length === 3 && segments[2] === 'download' && ['GET', 'HEAD'].includes(method)) {
+        authorize(req); const file = fileById(id); if (!file) throw new HttpError(404, 'File not found.'); return await download(req, file);
+      }
+      if (segments.length === 2 && method === 'GET') { authorize(req); const file = fileById(id); if (!file) throw new HttpError(404, 'File not found.'); const { deleting: _, ...metadata } = file; return json(metadata); }
+      if (segments.length === 2 && method === 'DELETE') { authorize(req, 'delete'); if (!fileById(id)) throw new HttpError(404, 'File not found.'); await deleteFile(id); return json({ success: true }); }
+    }
+    if (route === 'keys') {
+      authorize(req, 'read', true);
+      if (method === 'GET') return json({ keys: db().prepare('SELECT id, name, scopes, created_at, last_used_at FROM api_keys ORDER BY created_at DESC').all().map(key => ({ ...key, scopes: JSON.parse(String(key.scopes)) })) });
+      if (method === 'POST') {
+        const data = await body(req);
+        const name = typeof data.name === 'string' ? data.name.trim() : '';
+        if (!name || name.length > 60 || /[\x00-\x1f]/.test(name)) throw new HttpError(400, 'Name your key using 1–60 characters.');
+        const scopes = Array.isArray(data.scopes) ? [...new Set(data.scopes)] : ['read', 'upload'];
+        if (!scopes.length || scopes.some(s => !['read', 'upload', 'delete'].includes(s as Scope))) throw new HttpError(400, 'Choose valid permissions.');
+        const id = randomUUID(); const token = 'pd_' + randomBytes(32).toString('hex');
+        const createdAt = new Date().toISOString();
+        transaction(() => {
+          if ((db().prepare('SELECT COUNT(*) AS n FROM api_keys').get() as { n: number }).n >= 50) throw new HttpError(400, 'Revoke an old key before creating more (maximum 50).');
+          db().prepare('INSERT INTO api_keys(id, name, hash, scopes, created_at) VALUES (?, ?, ?, ?, ?)').run(id, name, hashToken(token), JSON.stringify(scopes), createdAt);
+        });
+        return json({ id, name, token, scopes, created_at: createdAt }, 201);
+      }
+    }
+    if (segments[0] === 'keys' && segments.length === 2 && method === 'DELETE') {
+      authorize(req, 'read', true);
+      if (!validId(segments[1])) throw new HttpError(404, 'API key not found.');
+      if (!db().prepare('DELETE FROM api_keys WHERE id = ?').run(segments[1]).changes) throw new HttpError(404, 'API key not found.');
+      return json({ success: true });
+    }
+    throw new HttpError(404, 'Endpoint not found.');
+  } catch (error) {
+    if (error instanceof HttpError) return json({ error: error.message }, error.status);
+    console.error('API request failed:', error instanceof Error ? error.message : 'Unknown error');
+    return json({ error: 'The server could not complete this request. Check the server logs.' }, 500);
+  }
+}
