@@ -13,7 +13,7 @@ RUN npm run build
 FROM node:24-bookworm-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3000 STORAGE_PATH=/app/storage
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libreoffice-writer libreoffice-impress fonts-dejavu-core fonts-liberation util-linux \
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libreoffice-writer libreoffice-impress fonts-dejavu-core fonts-liberation util-linux poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 RUN groupadd --gid 1001 drive && useradd --uid 1001 --gid drive --no-create-home drive \
     && mkdir -p /app/storage && chown drive:drive /app/storage

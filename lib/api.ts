@@ -16,6 +16,7 @@ export async function dispatch(req: Request, segments: string[]): Promise<Respon
   try {
     const route = segments.join('/'); const method = req.method;
     if (route === 'health' && method === 'GET') { config(); db().prepare('SELECT 1').get(); return json({ status: 'ok' }); }
+    if (segments[0] === 'assistant') return await (await import('./assistant/api')).assistantApi(req, segments);
     if (route === 'auth/login' && method === 'POST') {
       checkOrigin(req); const data = await body(req); const token = await login(data.username, data.password);
       const response = json({ success: true }); response.headers.set('Set-Cookie', sessionCookie(token)); return response;

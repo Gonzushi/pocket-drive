@@ -15,6 +15,24 @@ services:
       STORAGE_QUOTA_BYTES: ${STORAGE_QUOTA_BYTES:-20000000000}
       MIN_FREE_DISK_BYTES: ${MIN_FREE_DISK_BYTES:-5000000000}
       MAX_FILE_BYTES: ${MAX_FILE_BYTES:-1000000000}
+      ASSISTANT_WORKER_URL: http://codex:4400
+      ASSISTANT_WORKER_SECRET: ${ASSISTANT_WORKER_SECRET:?Generate a separate assistant worker secret}
     volumes:
       - /srv/file-storage:/app/storage
     stop_grace_period: 30s
+  codex:
+    build: ./services/codex
+    restart: unless-stopped
+    expose:
+      - "4400"
+    environment:
+      ASSISTANT_WORKER_SECRET: ${ASSISTANT_WORKER_SECRET:?Generate a separate assistant worker secret}
+      POCKET_DRIVE_URL: http://drive:3000
+      CODEX_STATE_PATH: /state
+    volumes:
+      - /srv/pocket-drive-codex:/state
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

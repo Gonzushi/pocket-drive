@@ -151,6 +151,11 @@ export async function removePrepared(id: string) {
   for (const job of jobs) await rm(derivativePath(job.key, job.variant), { force: true });
   db().prepare('DELETE FROM preview_jobs WHERE file_id=?').run(id);
 }
+export async function preparedDocumentPath(file: StoredFile) {
+  const status = await preparedStatus(file, 'document');
+  if (status.status !== 'ready') throw new HttpError(409, 'Document preview is not ready.');
+  return derivativePath(cacheKey(file, 'document'), 'document');
+}
 async function trimPreviewCache() {
   const entries = await readdir(cacheRoot(), { withFileTypes: true });
   const files = await Promise.all(entries.filter(e => e.isFile() && /^[a-f0-9]{64}\.(pdf|mp4)$/.test(e.name)).map(async e => ({ name: e.name, ...await stat(path.join(cacheRoot(), e.name)) })));

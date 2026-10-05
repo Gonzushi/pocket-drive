@@ -1,0 +1,7 @@
+{
+  "name": "pocket-drive-codex-worker",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node server.mjs", "test": "node --test test.mjs" },
+  "dependencies": { "@openai/codex": "0.160.0" }
+}

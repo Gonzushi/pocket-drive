@@ -138,3 +138,7 @@ Click a filename or choose **⋯ → Preview**. The preview overlay includes Pre
 Supported viewers include images with zoom/rotation/panning, selectable/searchable PDFs with thumbnails, a read-only code editor with folding/search/themes/line navigation, formatted Markdown, searchable/sortable CSV/TSV/XLSX tables, cached DOCX/PPTX/ODT/ODP conversion, fast-start video with a 720p option, audio controls, and ZIP contents. Original downloads stay unchanged. Redeploy with the updated Dockerfile for conversion tools; keep the persistent storage mount. See [the preview guide](docs/PREVIEWS.md) for limits and deployment details.
 
 Tables parse in a cancellable background worker. Viewers and preview libraries load only when opened. Local PDF/table assets are generated before `npm run dev` and `npm run build`, and are included in the standalone Docker server. No external document-viewer service is used.
+
+## Personal Codex assistant
+
+The personal Codex assistant can search and read documents, explain code, summarize and compare files, and organize folders with per-message permission. It uses your ChatGPT/Codex sign-in, **gpt-6.1-sol**, and **medium** reasoning. See [ASSISTANT.md](ASSISTANT.md) for the private worker deployment, persistent mounts, sign-in and reading limits. The main Dockerfile also works without a worker.

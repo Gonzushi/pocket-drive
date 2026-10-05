@@ -6,3 +6,4 @@ storage/
 *.tsbuildinfo
 test-results/
 public/preview-assets/
+services/codex/state/
