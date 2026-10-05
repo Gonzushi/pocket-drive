@@ -9,6 +9,7 @@ import { folderTree, markItemsForDeletion, moveItems, renameItem } from './items
 import { downloadFolder, downloadItems } from './folder-download';
 import { beginUpload, cancelUpload, finishUpload, uploadChunk, uploadStatus } from './resumable';
 import { archiveEntries, previewContent, previewInfo, previewText } from './preview';
+import { listFiles } from './listing';
 
 export async function dispatch(req: Request, segments: string[]): Promise<Response> {
   try {
@@ -48,20 +49,7 @@ export async function dispatch(req: Request, segments: string[]): Promise<Respon
       if (method === 'POST') { authorize(req, 'upload'); return json(await upload(req), 201); }
       if (method === 'GET') {
         authorize(req);
-        const params = new URL(req.url).searchParams;
-        const q = (params.get('q') || '').slice(0, 200);
-        const folder = parentId(params.get('folder_id'));
-        const breadcrumbs = trail(folder).map(({ id, name }) => ({ id, name }));
-        const type = params.get('type') || 'all';
-        if (!['all', 'image', 'document', 'other'].includes(type)) throw new HttpError(400, 'Invalid file filter.');
-        const offset = Number(params.get('offset') || '0');
-        if (!Number.isSafeInteger(offset) || offset < 0) throw new HttpError(400, 'Invalid page.');
-        const pattern = '%' + q.replace(/[\\%_]/g, '\\$&') + '%';
-        const where = "deleting = 0 AND name LIKE ? ESCAPE '\\' AND (? = 'all' OR kind = ?) AND (? = 0 OR folder_id IS ?)";
-        const values = [pattern, type, type, params.has('folder_id') ? 1 : 0, folder];
-        const count = db().prepare(`SELECT COUNT(*) AS total FROM files WHERE ${where}`).get(...values) as { total: number };
-        const files = db().prepare(`SELECT id, name, size, mime_type, kind, checksum, created_at, folder_id FROM files WHERE ${where} ORDER BY created_at DESC, id DESC LIMIT 50 OFFSET ?`).all(...values, offset);
-        return json({ files, total: count.total, offset, limit: 50, folders: type === 'all' ? childFolders(folder, q) : [], breadcrumbs });
+        return json(listFiles(new URL(req.url).searchParams));
       }
     }
     if (route === 'folders') {

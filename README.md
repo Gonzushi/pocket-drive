@@ -30,7 +30,7 @@ The screenshot shows isolated test data. Your new drive starts empty. Validation
 - Create folders, browse nested folders, and upload a folder with its files and subfolder paths preserved. Dragging folders onto the upload area is also supported by compatible browsers.
 - Rename files and folders, select up to 100 items, move them using a destination picker, and delete selected items with confirmation. Moving updates metadata without uploading files again.
 - Resumable file/folder uploads with a saved browser queue, overall and per-file progress, pause/resume, cancellation, and automatic connection retries. Large batches start collapsed; expanded details scroll inside a bounded panel. Uploads continue while you browse folders or API keys.
-- Search and filters for documents, images, and other files; 50 files per page.
+- Filename search in the current folder, optionally including subfolders, or across the entire drive; file-type filters and server-side sorting; 50 files per page.
 - Private downloads, resumable HTTP range requests, and deletion with confirmation.
 - A single administrator login with a hashed password, HttpOnly session cookies, origin checks, and sign-in throttling.
 - API keys with separate **read**, **upload**, and **delete** permissions. Keys are shown once; only keyed hashes are stored. Upload permission includes creating, renaming, and moving files/folders; it does not allow key management or deletion.
@@ -43,7 +43,7 @@ All sizes use **decimal units**: 1 GB = 1,000,000,000 bytes. The quota applies t
 ## Everyday use
 
 1. Sign in, then choose **Upload files**, **Upload folder**, or drop files/folders into the upload area. Uploads go into the folder you are viewing.
-2. Open folders by clicking their names or using the sidebar tree. Use **Back**, **Forward**, **Up one level**, or the breadcrumb path to navigate. On mobile, tap **Folders** for the folder drawer. Search and file-type filters apply to the current folder.
+2. Open folders by clicking their names or using the sidebar tree. Use **Back**, **Forward**, **Up one level**, or the breadcrumb path to navigate. On mobile, tap **Folders** for the folder drawer. Choose **This folder**, **Include subfolders**, or **Entire drive** for filename search. Drive-wide and recursive results show their containing path; click a file's path or a folder's **Open location** action to visit its parent folder. Sort by name, upload date, size, or extension; folders stay first (folders sort alphabetically for size/type sorting). Search, scope, filters and sorting are saved in the URL. Opening a folder clears search and returns to that folder's contents while keeping sorting and file-type filters; Back restores the previous search and scroll position.
 3. Use the download arrow to save it to your device.
 4. Use an item's **⋯** menu to rename, move, delete, or download a folder as ZIP. Check several items, then choose **Download ZIP** to download them together, or choose another batch action. In **Move to**, browse to your destination (or create a folder), then choose **Move here**. **Open destination** takes you to the result.
 5. Open **API keys** to connect a script. Create one key per tool, copy it immediately, and use the example on that page.

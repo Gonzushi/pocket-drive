@@ -120,10 +120,14 @@ Pending sessions reserve the exact file size across all workers and upload metho
 | `type` | `all`, `document`, `image`, or `other` |
 | `offset` | Nonnegative result offset, default 0 |
 | `folder_id` | `root` for top-level files, or a folder UUID for its direct files. Omit to list files across the entire drive for compatibility. |
+| `scope` | `folder` or `drive`. Defaults to `folder` when `folder_id` is present, otherwise `drive`. |
+| `recursive` | `1` includes subfolders for folder scope; `0` (default) searches direct contents only. Recursive root searches the whole drive. |
+| `sort` | `name`, `date` (default), `size`, or `type` (filename extension, case-insensitive). |
+| `order` | `asc` or `desc`. Defaults to descending for date/size, ascending for name/type. |
 
-Returns `{ "files": [...], "total": 124, "offset": 0, "limit": 50 }`. Each file has the same metadata fields as the upload response except `download_url`. Results are newest first. Increase offset by 50 to continue. New uploads/deletes may change offsets; this version uses simple offset pagination.
+Returns `{ "files": [...], "total": 124, "offset": 0, "limit": 50 }`. Each file has the same metadata fields as the upload response except `download_url`, plus `location` (human-readable containing path, starting with `My files`). Results default to newest first. Sorting applies before pagination, with stable name/ID tie breakers. Increase offset by 50 to continue. New uploads/deletes may change offsets; this version uses simple offset pagination.
 
-The response also includes `folders` (direct child folders, with item counts) and `breadcrumbs` (ancestors followed by the current folder). A file's `folder_id` is `null` at the drive root. File-type filters hide folders; name search is limited to the selected location when `folder_id` is specified.
+The response also includes `folders` (matching folders within the selected scope, with direct item counts and containing `location`) and `breadcrumbs` (ancestors followed by the current folder). Folder results are separate from paginated files: the UI puts folders first. They follow name/date sorting, and remain alphabetically ordered for size/type sorting. A file's `folder_id` is `null` at the drive root. File-type filters hide folders. Search matches file/folder names, not file contents. Authentication and read permissions apply to every scope.
 
 ```bash
 curl --fail-with-body "$POCKET_DRIVE_URL/api/files?type=document&q=report" \

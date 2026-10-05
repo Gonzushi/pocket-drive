@@ -5,7 +5,7 @@ import { api } from '@/lib/client';
 import type { TreeFolder } from '@/lib/types';
 
 type Visit = { id: string; url: string; scroll: number };
-type Explorer = { folders: TreeFolder[]; treeLoading: boolean; treeError: string; refreshTree: () => void; navigate: (id?: string) => void; back: () => void; forward: () => void; canBack: boolean; canForward: boolean; restoreScroll: () => void; folderId: string };
+type Explorer = { folders: TreeFolder[]; treeLoading: boolean; treeError: string; refreshTree: () => void; navigate: (id?: string) => void; back: () => void; forward: () => void; canBack: boolean; canForward: boolean; restoreScroll: () => void; folderId: string; view: URLSearchParams; updateView: (changes: Record<string, string>) => void };
 const Context = createContext<Explorer | null>(null);
 export function useExplorer() { const value = useContext(Context); if (!value) throw new Error('Explorer provider is missing.'); return value; }
 export default function ExplorerProvider({ children }: { children: React.ReactNode }) {
@@ -16,6 +16,13 @@ export default function ExplorerProvider({ children }: { children: React.ReactNo
   const pendingScroll = useRef<number | null>(null);
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshTree = useCallback(() => setRevision(v => v + 1), []);
+  useEffect(() => {
+    // Restore only after all previously visible pages have loaded. Native
+    // restoration can otherwise clamp the saved position to the loading shell.
+    const previous = window.history.scrollRestoration;
+    window.history.scrollRestoration = 'manual';
+    return () => { window.history.scrollRestoration = previous; };
+  }, []);
   useEffect(() => {
     const controller = new AbortController(); setTreeLoading(true); setTreeError('');
     api<{ folders: TreeFolder[] }>('/api/folders/tree', { signal: controller.signal }).then(data => { if (!controller.signal.aborted) setFolders(data.folders); }).catch(err => { if (err.name !== 'AbortError') setTreeError(err.message); }).finally(() => { if (!controller.signal.aborted) setTreeLoading(false); });
@@ -49,7 +56,26 @@ export default function ExplorerProvider({ children }: { children: React.ReactNo
     return () => { window.removeEventListener('scroll', save); window.removeEventListener('pagehide', hide); };
   }, [persist]);
   useEffect(() => { window.addEventListener('popstate', freezeScroll); return () => window.removeEventListener('popstate', freezeScroll); }, [freezeScroll]);
-  const navigate = useCallback((id = 'root') => { const target = id === 'root' ? '/files' : `/files?folder=${encodeURIComponent(id)}`; if (target === url) return; beginNavigation(); router.push(target, { scroll: false }); }, [router, beginNavigation, url]);
+  const updateView = useCallback((changes: Record<string, string>) => {
+    savePosition();
+    const next = new URLSearchParams(window.location.search);
+    for (const [key, value] of Object.entries(changes)) { if (value) next.set(key, value); else next.delete(key); }
+    const target = '/files' + (next.size ? '?' + next.toString() : '');
+    const visit = visits.current[cursor.current];
+    if (visit) visit.url = target;
+    // Next integrates native history updates with useSearchParams. Replacing the
+    // current view keeps typing/filter changes out of the folder history stack.
+    window.history.replaceState(visit ? { pocketDriveVisit: { id: visit.id, url: target } } : null, '', target);
+    persist();
+  }, [savePosition, persist]);
+  const navigate = useCallback((id = 'root') => {
+    const next = new URLSearchParams(window.location.search);
+    if (id === 'root') next.delete('folder'); else next.set('folder', id);
+    next.delete('q'); next.delete('scope'); next.delete('recursive');
+    const target = '/files' + (next.size ? '?' + next.toString() : '');
+    if (target === url) return;
+    beginNavigation(); router.push(target, { scroll: false });
+  }, [router, beginNavigation, url]);
   const restoreScroll = useCallback(() => {
     if (pendingScroll.current === null) return;
     if (scrollTimer.current) clearTimeout(scrollTimer.current);
@@ -58,5 +84,5 @@ export default function ExplorerProvider({ children }: { children: React.ReactNo
     scrollTimer.current = setTimeout(() => { if (pendingScroll.current !== null) window.scrollTo(0, pendingScroll.current); pendingScroll.current = null; }, 100);
   }, []);
   useEffect(() => () => { if (scrollTimer.current) clearTimeout(scrollTimer.current); }, []);
-  return <Context.Provider value={{ folders, treeLoading, treeError, refreshTree, navigate, back: () => { beginNavigation(); router.back(); }, forward: () => { beginNavigation(); router.forward(); }, canBack: history.back, canForward: history.forward, restoreScroll, folderId }}>{children}</Context.Provider>;
+  return <Context.Provider value={{ folders, treeLoading, treeError, refreshTree, navigate, back: () => { beginNavigation(); router.back(); }, forward: () => { beginNavigation(); router.forward(); }, canBack: history.back, canForward: history.forward, restoreScroll, folderId, view: new URLSearchParams(params.toString()), updateView }}>{children}</Context.Provider>;
 }
