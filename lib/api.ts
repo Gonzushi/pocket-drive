@@ -7,6 +7,7 @@ import { cleanup, deleteFile, download, storageInfo, upload, validId } from './s
 import { childFolders, createFolder, folderDetails, markFolderForDeletion, parentId, trail } from './folders';
 import { folderTree, markItemsForDeletion, moveItems, renameItem } from './items';
 import { downloadFolder, downloadItems } from './folder-download';
+import { beginUpload, cancelUpload, finishUpload, uploadChunk, uploadStatus } from './resumable';
 
 export async function dispatch(req: Request, segments: string[]): Promise<Response> {
   try {
@@ -23,6 +24,14 @@ export async function dispatch(req: Request, segments: string[]): Promise<Respon
       const response = json({ success: true }); response.headers.set('Set-Cookie', sessionCookie('', true)); return response;
     }
     if (route === 'storage' && method === 'GET') { authorize(req); return json(await storageInfo()); }
+    if (route === 'uploads' && method === 'POST') { authorize(req,'upload'); return json(await beginUpload(await body(req,16384),req.signal),201); }
+    if (segments[0] === 'uploads' && validId(segments[1] || '')) {
+      authorize(req,'upload'); const id = segments[1];
+      if (segments.length === 2 && method === 'GET') return json(uploadStatus(id));
+      if (segments.length === 2 && method === 'PATCH') return json(await uploadChunk(req,id));
+      if (segments.length === 2 && method === 'DELETE') return json(await cancelUpload(id));
+      if (segments.length === 3 && segments[2] === 'complete' && method === 'POST') return json(await finishUpload(req,id));
+    }
     if (route === 'folders/tree' && method === 'GET') { authorize(req); return json({ folders: folderTree() }); }
     if (route === 'items/download' && ['GET', 'HEAD', 'POST'].includes(method)) {
       authorize(req);

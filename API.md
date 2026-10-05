@@ -12,7 +12,7 @@ There is no public upload or download endpoint. API keys grant access to this si
 
 `POST /api/files` — requires **upload** permission.
 
-Send `multipart/form-data` with exactly one field named `file`. Do not set Content-Type manually when using FormData, requests, or curl; let the client include the multipart boundary. Multiple selected files in the website are uploaded as separate requests.
+Send `multipart/form-data` with exactly one field named `file`. Do not set Content-Type manually when using FormData, requests, or curl; let the client include the multipart boundary. This original endpoint remains available to scripts. The website uses the resumable API below.
 
 ```bash
 export POCKET_DRIVE_URL='https://files.example.com'
@@ -38,7 +38,7 @@ Successful response (`201`):
 }
 ```
 
-`download_url` is authenticated, not a public share link. Repeating an upload creates a separate file; this version does not deduplicate or implement idempotency keys.
+`download_url` is authenticated, not a public share link. Repeating this multipart request creates a separate file. Use the resumable API below for stable upload IDs and retry recovery.
 
 Python:
 
@@ -59,6 +59,56 @@ print(response.json())
 ```
 
 Install requests with `pip install requests`. For very large files, standard requests may build the multipart body in memory on the client; use curl or a streaming multipart client when needed. The server streams uploads to disk.
+
+## Resumable uploads
+
+All endpoints in this section require **upload** permission. Cookie-authenticated mutations also require a matching Origin. API keys work without browser storage; scripts retain their own source file and UUID. These endpoints support files and nested folder paths. The website adds its persistent browser queue on top of this protocol.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `POST /api/uploads` | Create or recover a session with a stable UUID |
+| `GET /api/uploads/{id}` | Read the committed byte offset and completion status |
+| `PATCH /api/uploads/{id}` | Append one binary chunk at the committed offset |
+| `POST /api/uploads/{id}/complete` | Publish the complete file and create its folder path |
+| `DELETE /api/uploads/{id}` | Cancel an unfinished session and release its reservation |
+
+Creation JSON (maximum 16 KiB):
+
+```json
+{
+  "id": "81220d63-8861-4fbd-87ed-727d0c7e20af",
+  "name": "report.pdf",
+  "size": 123456,
+  "mime_type": "application/pdf",
+  "folder_id": "root",
+  "relative_path": "Reports/October/report.pdf"
+}
+```
+
+Generate a lowercase UUID v4 once per file. The optional `folder_id` defaults to root; `relative_path` may be empty, otherwise its last component must match the filename. Names/paths use the existing folder validation and depth limits. `size` is a nonnegative integer within the configured per-file limit. Creation returns `201`; repeating the same ID and metadata recovers that session, while incompatible metadata returns `409`. At most 100 unfinished server sessions may exist simultaneously; the website creates them sequentially and supports up to 5,000 queued files.
+
+Session response:
+
+```json
+{
+  "id": "81220d63-8861-4fbd-87ed-727d0c7e20af",
+  "name": "report.pdf",
+  "size": 123456,
+  "offset": 0,
+  "status": "uploading",
+  "expires": 1791280800000,
+  "chunk_size": 4194304,
+  "busy": false
+}
+```
+
+Send nonempty chunks up to `chunk_size` bytes using `Content-Type: application/octet-stream` and `Upload-Offset: {offset}`. A successful PATCH returns the new committed offset; bytes are flushed before advancing it. Only one chunk/finalization request can own a session at a time. A conflicting offset or active request returns `409`: fetch status and retry from the server offset. An interrupted chunk does not advance the offset, and leftover unconfirmed bytes are truncated before retry. Network failures and lost responses should always trigger a status check rather than assuming how many bytes were saved.
+
+When `offset === size`, POST `/complete`. This streams the checksum, publishes the file, and returns `status: "complete"` with `file: { id, name, size, folder_id, checksum }`. Completion retries return the same file; GET also recognizes the published file after the session record has expired. Do not create a new UUID when recovering a lost completion response. Finishing before all bytes are committed returns `409`. Empty files can finish immediately. GET may report `status: "finalizing"`; retry completion when `busy` is false.
+
+Cancel returns `{ "success": true }`. An active chunk can return `409`; stop its request and retry cancellation. Cancelling a completed session leaves the published file intact and returns `complete: true`; use the existing delete-file endpoint with **delete** permission to remove it. Cancelling an expired/missing session returns `404` and needs no further action. Cancellation IDs are retained for 24 hours to prevent a delayed create request from starting abandoned work; a create using that ID returns `410`. Select the file again with a new UUID after intentional cancellation.
+
+Pending sessions reserve the exact file size across all workers and upload methods. Activity extends their 24-hour expiry. Expired partials are cleaned on a storage check or new upload. A `404` for an unfinished expired session requires restarting from offset zero with the retained source. Published file contents count against quota only once. The chunk deadline is two minutes. Normal auth, size, quota, and disk-space errors apply (`401`/`403`/`413`/`507`).
 
 ## List and search
 

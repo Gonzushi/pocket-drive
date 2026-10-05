@@ -15,23 +15,41 @@ export const filePath = (id: string) => {
   if (!validId(id)) throw new HttpError(404, 'File not found.');
   return path.join(config().storagePath, 'files', id);
 };
-function totals() {
+export function totals() {
   return db().prepare('SELECT COALESCE(SUM(size), 0) AS used, COUNT(*) AS count FROM files').get() as { used: number; count: number };
 }
-function reserved() { return (db().prepare('SELECT COALESCE(SUM(bytes), 0) AS bytes FROM reservations').get() as { bytes: number }).bytes; }
-async function diskFree() { const fs = await statfs(config().storagePath); return fs.bavail * fs.bsize; }
+export function reserved() { return (db().prepare('SELECT COALESCE(SUM(bytes), 0) AS bytes FROM reservations').get() as { bytes: number }).bytes; }
+export function diskReserved() { const staged = (db().prepare("SELECT COALESCE(SUM(offset), 0) AS bytes FROM uploads WHERE status != 'complete'").get() as { bytes: number }).bytes; return Math.max(0, reserved() - staged); }
+export async function diskFree() { const fs = await statfs(config().storagePath); return fs.bavail * fs.bsize; }
 
 export async function cleanup() {
   db();
   const expired = transaction(() => {
-    const rows = db().prepare('SELECT id FROM reservations WHERE expires < ?').all(Date.now()) as { id: string }[];
-    db().prepare('DELETE FROM reservations WHERE expires < ?').run(Date.now());
-    return rows;
+    const now = Date.now();
+    db().prepare('DELETE FROM upload_cancellations WHERE expires < ?').run(now);
+    const rows = db().prepare(`SELECT r.id, u.id AS upload_id FROM reservations r LEFT JOIN uploads u ON u.id=r.id WHERE r.expires < ? AND (u.id IS NULL OR u.lease_until < ?)
+      UNION SELECT id, id AS upload_id FROM uploads WHERE expires < ? AND status != 'complete' AND lease_until < ?`).all(now,now,now,now) as { id: string; upload_id: string | null }[];
+    // Keep an expired session's ID reserved until its bytes have been removed.
+    // A second worker must not delete a newly restarted upload with the same ID.
+    const claimed = rows.map(row => {
+      const token = row.upload_id ? randomUUID() : '';
+      if (token) db().prepare("UPDATE uploads SET status='cleaning',lease_token=?,lease_until=? WHERE id=?").run(token,now+90_000,row.id);
+      db().prepare('DELETE FROM reservations WHERE id=?').run(row.id);
+      return {id:row.id,token};
+    });
+    db().prepare("DELETE FROM uploads WHERE expires < ? AND status='complete'").run(now);
+    return claimed;
   });
   for (const row of expired) {
-    await rm(path.join(config().storagePath, 'tmp', row.id), { force: true });
-    // A crash between rename and metadata commit can leave an unregistered file.
-    if (!db().prepare('SELECT 1 FROM files WHERE id = ?').get(row.id)) await rm(filePath(row.id), { force: true });
+    try {
+      await rm(path.join(config().storagePath, 'tmp', row.id), { force: true });
+      // A crash between rename and metadata commit can leave an unregistered file.
+      if (!db().prepare('SELECT 1 FROM files WHERE id = ?').get(row.id)) await rm(filePath(row.id), { force: true });
+      if (row.token) db().prepare("DELETE FROM uploads WHERE id=? AND lease_token=? AND status='cleaning'").run(row.id,row.token);
+    } catch (error) {
+      if (row.token) db().prepare('UPDATE uploads SET lease_until=0 WHERE id=? AND lease_token=?').run(row.id,row.token);
+      throw error;
+    }
   }
   const deleting = db().prepare('SELECT id FROM files WHERE deleting = 1').all() as { id: string }[];
   for (const row of deleting) {
@@ -46,7 +64,7 @@ export async function storageInfo() {
   const { used, count } = totals(); const pending = reserved();
   return {
     used_bytes: used, quota_bytes: cfg.quota, reserved_bytes: pending, file_count: count,
-    available_bytes: Math.max(0, Math.min(cfg.quota - used - pending, free - cfg.reserve - pending)),
+    available_bytes: Math.max(0, Math.min(cfg.quota - used - pending, free - cfg.reserve - diskReserved())),
     disk_free_bytes: free, min_free_disk_bytes: cfg.reserve, max_file_bytes: cfg.maxFile
   };
 }
@@ -72,7 +90,7 @@ export async function upload(req: Request) {
   const free = await diskFree(); const id = randomUUID();
   const budget = transaction(() => {
     const remaining = cfg.quota - totals().used - reserved();
-    const diskRemaining = free - cfg.reserve - reserved();
+    const diskRemaining = free - cfg.reserve - diskReserved();
     if (remaining <= 0) throw new HttpError(507, 'Your storage is full. Delete files before uploading more.');
     if (diskRemaining <= 0) throw new HttpError(507, 'Uploads are paused because the server needs more free disk space.');
     const bytes = Math.floor(Math.min(cfg.maxFile, remaining, diskRemaining));

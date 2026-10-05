@@ -30,6 +30,15 @@ export function db() {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS folder_names ON folders(COALESCE(parent_id, ''), name COLLATE NOCASE);
     CREATE INDEX IF NOT EXISTS folder_parent ON folders(parent_id);
+    CREATE TABLE IF NOT EXISTS uploads (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, size INTEGER NOT NULL,
+      mime_type TEXT NOT NULL, destination TEXT, relative_path TEXT NOT NULL,
+      offset INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'uploading',
+      expires INTEGER NOT NULL, created_at TEXT NOT NULL,
+      lease_token TEXT, lease_until INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS upload_expiry ON uploads(expires);
+    CREATE TABLE IF NOT EXISTS upload_cancellations (id TEXT PRIMARY KEY, expires INTEGER NOT NULL);
   `);
   // Upgrade v1 drives in place. Existing files stay at the root.
   database.exec('BEGIN IMMEDIATE');

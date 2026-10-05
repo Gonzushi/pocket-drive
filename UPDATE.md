@@ -1,6 +1,8 @@
 # Update an existing local Pocket Drive
 
-This update adds **Download ZIP** to the selection bar so checked files and folders can be downloaded together. It keeps the sidebar’s “Upload your way” card in place when switching between My files and API keys. It makes the files header and storage overview more compact and adds **Download as ZIP** to each folder’s **⋯** menu, including nested files and empty folders. It includes Back/Forward/Up navigation, a folder tree, file/folder renaming, and batch moves/deletion. It retains folder uploads and the duplicate Node preload startup fix. It also filters only the specific SQLite experimental notice during module loading; other warnings and database errors remain visible.
+This update adds **refresh-safe uploads** for files and folders, overall and per-file progress, persistent pause/resume, automatic connection retries, and a compact upload panel that stays visible across the workspace. Batches of more than five files start collapsed; expanding them shows a fixed-height scrolling list. Completed files are never duplicated when recovering the same saved queue. Keep the tab open during the initial **Preparing uploads** step; once that finishes, refresh or reopen the app in the same browser to continue.
+
+It retains folder navigation and moves, folder/selection ZIP downloads, the compact header, the fixed sidebar card, and the Node preload and SQLite notice fixes. There are no dependency changes. The database adds an upload-session table automatically without changing existing file content, login credentials, or API keys.
 
 1. Stop the running app with **Control + C**.
 2. Extract the updated ZIP into a separate folder.
@@ -31,3 +33,9 @@ npm ci --registry=https://registry.npmjs.org/
 npm run setup
 npm run dev -- --port 3000
 ```
+
+## Existing GitHub / Coolify deployment
+
+Merge the updated source into your GitHub checkout, preserving your environment files and storage directory. Review the changes, commit and push to the branch Coolify deploys, then redeploy. Keep the same persistent storage mount and runtime environment settings. The upload-session table is created automatically on startup. No reset or new password is needed. Verify a small folder upload, then refresh during a larger file upload to check recovery on your deployed origin.
+
+The browser caches selected sources locally for recovery, so allow device storage and use smaller batches if needed. Transfers pause when the app is closed and resume when it is reopened. Sources are released after each successful file. See README.md for preparation, retention, and browser-storage limits.

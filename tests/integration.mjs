@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, rm, readdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, readdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createHash, randomBytes, scryptSync } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, scryptSync } from 'node:crypto';
 import { createServer } from 'node:net';
+import { request as httpRequest } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 
 test('production storage API', { timeout: 120000 }, async t => {
@@ -286,6 +287,83 @@ test('production storage API', { timeout: 120000 }, async t => {
     assert.equal((await (await key('/api/storage')).json()).used_bytes,usage);
     await requestJSON('/api/items/delete','POST',{items:[ref(left,'folder'),ref(right,'folder'),ref(duplicate1),ref(duplicate2),ref(unselected)]});
     assert.equal((await (await key('/api/storage')).json()).used_bytes,0);
+  });
+  await t.test('resumable chunks survive restarts and lost acknowledgements without duplicates', async () => {
+    const id = randomUUID(); const bytes = Buffer.from('recoverable file bytes');
+    const create = (value = {}) => session('/api/uploads',{method:'POST',headers:json(),body:JSON.stringify({id,name:'resume.txt',size:bytes.length,relative_path:'Recovery/Nested/resume.txt',...value})});
+    const chunk = (offset,data) => session(`/api/uploads/${id}`,{method:'PATCH',headers:{'Content-Type':'application/octet-stream','Upload-Offset':String(offset)},body:data});
+    assert.equal((await create()).status,201); assert.equal((await create()).status,201);
+    assert.equal((await create({name:'other.txt'})).status,400);
+    assert.equal((await create({size:bytes.length+1})).status,409);
+    assert.equal((await send('/api/uploads',{method:'POST',headers:{...json(),Cookie:cookie,Origin:'https://evil.example'},body:JSON.stringify({id:randomUUID(),name:'x',size:1})})).status,403);
+    assert.equal((await (await session('/api/storage')).json()).reserved_bytes,bytes.length);
+    assert.equal((await session(`/api/uploads/${id}/complete`,{method:'POST'})).status,409);
+    assert.equal((await chunk(0,bytes.subarray(0,8))).status,200);
+    assert.equal((await chunk(0,bytes.subarray(0,8))).status,409);
+    assert.equal((await (await session(`/api/uploads/${id}`)).json()).offset,8);
+    // Simulate an interrupted write beyond the durable offset. Recovery truncates it.
+    await stop(); await writeFile(join(root,'tmp',id),Buffer.concat([bytes.subarray(0,8),Buffer.from('unconfirmed')])); await start();
+    assert.equal((await (await session(`/api/uploads/${id}`)).json()).offset,8);
+    assert.equal((await chunk(8,Buffer.alloc(bytes.length))).status,413);
+    assert.equal((await readFile(join(root,'tmp',id))).length,8);
+    const response = await chunk(8,bytes.subarray(8)); assert.equal(response.status,200); assert.equal((await response.json()).offset,bytes.length);
+    assert.equal((await session(`/api/uploads/${id}/complete`,{method:'POST'})).status,200);
+    assert.equal((await session(`/api/uploads/${id}/complete`,{method:'POST'})).status,200);
+    assert.equal((await (await session(`/api/uploads/${id}`)).json()).status,'complete');
+    assert.deepEqual(Buffer.from(await (await session(`/api/files/${id}/download`)).arrayBuffer()),bytes);
+    const file = await (await session(`/api/files/${id}`)).json(); assert.equal(file.checksum,createHash('sha256').update(bytes).digest('hex'));
+    assert.equal((await (await session('/api/storage')).json()).reserved_bytes,0);
+    const folders = (await (await session('/api/folders')).json()).folders; const recovery = folders.find(folder => folder.name === 'Recovery');
+    await session(`/api/folders/${recovery.id}`,{method:'DELETE'});
+  });
+  await t.test('resumable cancellation, leases, permission checks and finalization crash recovery', async () => {
+    const make = async (name,size) => { const id=randomUUID(); const response=await session('/api/uploads',{method:'POST',headers:json(),body:JSON.stringify({id,name,size})}); assert.equal(response.status,201); return id; };
+    const id=await make('cancel.bin',50);
+    const readKey=await (await session('/api/keys',{method:'POST',headers:json(),body:JSON.stringify({name:'Resume read only',scopes:['read']})})).json();
+    assert.equal((await send(`/api/uploads/${id}`,{headers:{Authorization:`Bearer ${readKey.token}`}})).status,403);
+    const uploadKey=await (await session('/api/keys',{method:'POST',headers:json(),body:JSON.stringify({name:'Resume upload',scopes:['upload']})})).json();
+    assert.equal((await send(`/api/uploads/${id}`,{headers:{Authorization:`Bearer ${uploadKey.token}`}})).status,200);
+    // Interrupt an actual in-flight body. Unconfirmed bytes must be discarded.
+    const partial=httpRequest(address+`/api/uploads/${id}`,{method:'PATCH',headers:{Cookie:cookie,Origin:origin,'Content-Type':'application/octet-stream','Upload-Offset':'0','Content-Length':'50'}});
+    partial.on('error',()=>{}); partial.write('unconfirmed');
+    try {
+      let busy=false;
+      for(let i=0;i<40;i++){busy=(await (await session(`/api/uploads/${id}`)).json()).busy;if(busy)break;await new Promise(resolve=>setTimeout(resolve,25));}
+      assert(busy);
+      assert.equal((await session(`/api/uploads/${id}`,{method:'PATCH',headers:{'Content-Type':'application/octet-stream','Upload-Offset':'0'},body:'competing'})).status,409);
+    } finally { partial.destroy(); }
+    let resumed;
+    for(let i=0;i<40;i++){resumed=await (await session(`/api/uploads/${id}`)).json();if(!resumed.busy)break;await new Promise(resolve=>setTimeout(resolve,25));}
+    assert.equal(resumed.busy,false);assert.equal(resumed.offset,0);assert.equal((await readFile(join(root,'tmp',id))).length,0);
+    const database=new DatabaseSync(join(root,'metadata.sqlite'));
+    database.prepare('UPDATE uploads SET lease_token=?,lease_until=? WHERE id=?').run(randomUUID(),Date.now()+60000,id);
+    assert.equal((await session(`/api/uploads/${id}`,{method:'PATCH',headers:{'Content-Type':'application/octet-stream','Upload-Offset':'0'},body:'partial'})).status,409);
+    assert.equal((await session(`/api/uploads/${id}`,{method:'DELETE'})).status,409);
+    database.prepare('UPDATE uploads SET lease_until=0 WHERE id=?').run(id);
+    assert.equal((await session(`/api/uploads/${id}`,{method:'PATCH',headers:{'Content-Type':'application/octet-stream','Upload-Offset':'0'},body:'partial'})).status,200);
+    assert.equal((await session(`/api/uploads/${id}`,{method:'DELETE'})).status,200);
+    assert.equal((await session(`/api/uploads/${id}`)).status,404);
+    assert.equal((await session('/api/uploads',{method:'POST',headers:json(),body:JSON.stringify({id,name:'cancel.bin',size:50})})).status,410);
+    const late=randomUUID();assert.equal((await session(`/api/uploads/${late}`,{method:'DELETE'})).status,404);
+    assert.equal((await session('/api/uploads',{method:'POST',headers:json(),body:JSON.stringify({id:late,name:'late.bin',size:10})})).status,410);
+    assert.equal((await (await session('/api/storage')).json()).reserved_bytes,0);
+    assert(!((await readdir(join(root,'tmp'))).includes(id)));
+    const empty=await make('zero.bin',0); database.prepare("UPDATE uploads SET status='finalizing' WHERE id=?").run(empty);
+    assert.equal((await session(`/api/uploads/${empty}/complete`,{method:'POST'})).status,200);
+    const moved=await make('renamed.bin',3);
+    assert.equal((await session(`/api/uploads/${moved}`,{method:'PATCH',headers:{'Content-Type':'application/octet-stream','Upload-Offset':'0'},body:'abc'})).status,200);
+    database.prepare("UPDATE uploads SET status='finalizing' WHERE id=?").run(moved);
+    await rename(join(root,'tmp',moved),join(root,'files',moved));
+    assert.equal((await session(`/api/uploads/${moved}/complete`,{method:'POST'})).status,200);
+    assert.equal((await session(`/api/uploads/${moved}`,{method:'DELETE'})).status,200);
+    assert.equal((await session(`/api/files/${moved}`)).status,200);
+    // Completed files can still recover a lost acknowledgement after session expiry.
+    database.prepare('DELETE FROM uploads WHERE id=?').run(moved);
+    assert.equal((await (await session(`/api/uploads/${moved}`)).json()).status,'complete');
+    for(const file of [empty,moved]) await session(`/api/files/${file}`,{method:'DELETE'});
+    const expired=await make('expired.bin',4); database.prepare('UPDATE reservations SET expires=0 WHERE id=?').run(expired); database.prepare('UPDATE uploads SET expires=0 WHERE id=?').run(expired); database.close();
+    await writeFile(join(root,'tmp',expired),'part'); await session('/api/storage');
+    assert.equal((await session(`/api/uploads/${expired}`)).status,404); assert(!((await readdir(join(root,'tmp'))).includes(expired)));
   });
   await t.test('crash recovery removes expired partials and interrupted deletions', async () => {
     await stop();

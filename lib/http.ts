@@ -2,7 +2,7 @@ export class HttpError extends Error { constructor(public status: number, messag
 export function json(data: unknown, status = 200) {
   return Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 }
-export async function body(req: Request): Promise<Record<string, unknown>> {
+export async function body(req: Request, limit = 8192): Promise<Record<string, unknown>> {
   if (!req.headers.get('content-type')?.startsWith('application/json')) throw new HttpError(415, 'Send JSON with Content-Type: application/json.');
   if (!req.body) throw new HttpError(400, 'Request body is required.');
   const reader = req.body.getReader();
@@ -11,7 +11,7 @@ export async function body(req: Request): Promise<Record<string, unknown>> {
     while (true) {
       const part = await reader.read(); if (part.done) break;
       bytes += part.value.length;
-      if (bytes > 8192) { await reader.cancel(); throw new HttpError(413, 'Request is too large.'); }
+      if (bytes > limit) { await reader.cancel(); throw new HttpError(413, 'Request is too large.'); }
       chunks.push(part.value);
     }
     const value = JSON.parse(Buffer.concat(chunks).toString('utf8'));

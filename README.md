@@ -29,7 +29,7 @@ The screenshot shows isolated test data. Your new drive starts empty. Validation
 - A mobile-friendly folder explorer with Back/Forward/Up buttons, breadcrumbs, an expandable folder tree, a compact storage bar, and upload controls.
 - Create folders, browse nested folders, and upload a folder with its files and subfolder paths preserved. Dragging folders onto the upload area is also supported by compatible browsers.
 - Rename files and folders, select up to 100 items, move them using a destination picker, and delete selected items with confirmation. Moving updates metadata without uploading files again.
-- Multiple file selection, drag and drop, progress, cancellation, and individual upload results. Files upload sequentially from the UI.
+- Resumable file/folder uploads with a saved browser queue, overall and per-file progress, pause/resume, cancellation, and automatic connection retries. Large batches start collapsed; expanded details scroll inside a bounded panel. Uploads continue while you browse folders or API keys.
 - Search and filters for documents, images, and other files; 50 files per page.
 - Private downloads, resumable HTTP range requests, and deletion with confirmation.
 - A single administrator login with a hashed password, HttpOnly session cookies, origin checks, and sign-in throttling.
@@ -50,7 +50,15 @@ All sizes use **decimal units**: 1 GB = 1,000,000,000 bytes. The quota applies t
 
 There are no public file links. The download URL returned by the API still requires a signed-in browser or an API key. Every API key with read permission can access all files in this single workspace.
 
-Folder uploads process one file at a time and display each relative path in the upload results. Existing folders with the same path are reused; repeated files are kept as separate uploads. A partial failure does not undo successful files. Up to 5,000 files can be selected per UI batch, and folders can be nested up to 32 levels (10,000 folders per drive). Browser directory selection exposes file paths, so empty subfolders are not included; use **New folder** to create empty folders.
+Folder uploads process one file at a time and display each relative path in the upload panel. Existing folders with the same path are reused; repeated files are kept as separate uploads. A partial failure does not undo successful files. Up to 5,000 files can be selected per UI batch, and folders can be nested up to 32 levels (10,000 folders per drive). Browser directory selection exposes file paths, so empty subfolders are not included; use **New folder** to create empty folders.
+
+### Refresh-safe uploads
+
+After selecting files or a folder, the website saves the source files and queue in this browser using IndexedDB. **Keep the tab open during Preparing uploads**; a refresh before this atomic preparation finishes may require selecting the files again. Once the panel says **Uploading files**, refresh or reopen Pocket Drive on the same origin, browser, and profile to continue automatically. It resumes from the last server-confirmed chunk, and completed files are not uploaded twice. A chunk interrupted during refresh may be sent again.
+
+The compact panel shows overall byte progress and the completed file count. Batches of more than five files start collapsed. Expand the panel for the current file, a scrolling list, **Pause**, **Resume**, or **Cancel uploads**. Pause is remembered after refresh. Cancelling removes unfinished uploads and their saved sources; files already uploaded remain in your drive. The panel stays available while navigating within the workspace. Open tabs share one queue and coordinate one uploader.
+
+Closed tabs do not transfer bytes in the background. Reopening the app continues the saved queue. A sign-in expiry pauses the queue until you sign in again. After 24 inactive hours, an unfinished server session expires; the browser can start that file again from its cached source. Browser storage must have room for the selected files. Sources are removed from browser storage as each file finishes; clearing site data, private-session closure, storage eviction, or switching browsers/origins can lose an unfinished queue. The app requests persistent storage where supported and explains a storage failure before starting the batch. You can select a smaller batch if device storage is limited.
 
 Select up to 100 files and/or folders and choose **Download ZIP** to create one archive of that selection. Selected files appear at the ZIP root; selected folders retain their nested structure. Items already included inside a selected folder appear only once.
 
@@ -73,7 +81,7 @@ Moves keep file IDs, private download URLs, checksums, and storage usage unchang
 | `MIN_FREE_DISK_BYTES` | Keep at least this much disk free for other services | `5000000000` |
 | `MAX_FILE_BYTES` | Maximum one-file size | `1000000000` |
 
-Uploads also have a 15-minute timeout. A reservation may temporarily reduce the space shown as available by up to the per-file limit while an upload is running. Completed and failed uploads release it; crashed uploads expire after one hour and are cleaned up on the next storage check or upload.
+Website uploads send chunks of up to 4 MiB with a two-minute chunk deadline. Pending sessions reserve the exact file size and expire after 24 hours without activity; finishing or cancelling releases the reservation. Expired partials are removed on the next storage check or upload. The original multipart API retains its 15-minute timeout and up-to-per-file-limit reservation, with one-hour crash expiry.
 
 Set a smaller per-file limit if needed. For example, 100 MB is `MAX_FILE_BYTES=100000000`. Your proxy or CDN may have its own lower limit.
 
@@ -118,4 +126,7 @@ One private workspace and administrator, with files and folders stored on your V
 - [Next.js route handlers](https://nextjs.org/docs/app/getting-started/route-handlers)
 - [Next.js standalone deployment output](https://nextjs.org/docs/app/api-reference/config/next-config-js/output)
 - [Node.js SQLite documentation](https://nodejs.org/docs/latest-v24.x/api/sqlite.html)
+- [IndexedDB (persistent browser File/Blob storage)](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API)
+- [Web Locks (coordination between tabs)](https://developer.mozilla.org/en-US/docs/Web/API/Web_Locks_API)
+- [Browser storage quotas and eviction](https://developer.mozilla.org/en-US/docs/Web/API/Storage_API/Storage_quotas_and_eviction_criteria)
 - [Coolify bind mounts](https://coolify.io/docs/core/persistent-storage/storage-mounts/bind-mounts)
