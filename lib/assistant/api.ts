@@ -55,6 +55,7 @@ async function reply(chat: Chat, run: Run, text: string, context: string) {
             const value = JSON.parse(line);
             if (runById(run.id).status !== 'running') { await reader.cancel(); return; }
             if (value.type === 'thread' && typeof value.id === 'string' && value.id.length < 200) {
+              threadId = value.id;
               assistantDB().prepare('UPDATE assistant_chats SET thread_id=?,toolset_version=? WHERE id=?').run(value.id, ASSISTANT_TOOLSET_VERSION, chat.id);
             }
             if (value.type === 'delta' && typeof value.text === 'string') {

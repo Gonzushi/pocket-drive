@@ -19,6 +19,8 @@ test('Codex subprocess preserves HTTPS trust and routing without inheriting appl
     NODE_TLS_REJECT_UNAUTHORIZED: '0'
   };
   const production = productionCodex(settings);
+  assert(production.args.includes('code_mode.direct_only_tool_namespaces=["functions"]'));
+  assert(production.args.some((value, index) => value === '--disable' && production.args[index + 1] === 'code_mode_host'));
   const client = new Codex(process.execPath, [fileURLToPath(new URL('./fixture.mjs', import.meta.url))], production.environment);
   t.after(async () => { const stopped = client.child && once(client, 'stopped'); client.stop(); if (stopped) await stopped; await rm(home, { recursive: true, force: true }); });
   await client.start();

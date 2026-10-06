@@ -59,7 +59,7 @@ export function productionCodex(environment = process.env) {
     'CODEX_CA_CERTIFICATE', 'SSL_CERT_FILE', 'SSL_CERT_DIR'
   ].filter(name => environment[name]).map(name => [name, environment[name]]));
   const flags = ['shell_tool', 'unified_exec', 'apps', 'browser_use', 'computer_use', 'code_mode_host', 'remote_plugin', 'hooks', 'multi_agent', 'view_image'];
-  return new Codex(path.resolve('node_modules/.bin/codex'), ['app-server', ...flags.flatMap(name => ['--disable', name]), '-c', 'web_search="disabled"', '-c', 'cli_auth_credentials_store="file"'], {
+  // GPT-6.1 can route third-party tools through code mode. Keep Pocket Drive's\n  // top-level dynamic functions direct so they remain available while the code-mode\n  // host itself stays disabled and the worker keeps its fail-closed tool boundary.\n  return new Codex(path.resolve('node_modules/.bin/codex'), ['app-server', ...flags.flatMap(name => ['--disable', name]), '-c', 'code_mode.direct_only_tool_namespaces=["functions"]', '-c', 'web_search="disabled"', '-c', 'cli_auth_credentials_store="file"'], {
     ...network, PATH: environment.PATH, HOME: home, CODEX_HOME: home + '/codex', LANG: 'C.UTF-8', NODE_ENV: 'production'
   });
 }

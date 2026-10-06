@@ -94,7 +94,7 @@ test('personal assistant integration', { timeout: 120000 }, async t => {
     const before = fixture.requests.length; await send('Read project.txt after tool refresh');
     const turn = fixture.requests.slice(before).find(entry => entry.runId); assert(turn); assert.equal(turn.threadId, null);
     assert.match(turn.text, /Previous Pocket Drive conversation context/); assert.match(turn.text, /Read project.txt after tool refresh/);
-    const refreshed = await (await request('chats/' + chat.id)).json(); assert.equal(refreshed.chat.toolset_version, '2');
+    const refreshed = await (await request('chats/' + chat.id)).json(); assert.equal(refreshed.chat.toolset_version, '3');
   });
   await t.test('retries a missing-tool reply once on a fresh Codex thread', async () => {
     const before = fixture.requests.length; const value = await send('simulate missing tool');
