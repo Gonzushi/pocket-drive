@@ -17,13 +17,23 @@ async function worker(route: string, data?: unknown, signal?: AbortSignal) {
   if (!response.ok) { let error = 'The assistant could not connect. Try again.'; try { error = (await response.json()).error || error; } catch {} throw new HttpError(response.status >= 500 ? 503 : response.status, error); }
   return response;
 }
+function priorConversation(chat: Chat, before: number) {
+  if (chat.thread_id) return '';
+  const rows = assistantDB().prepare("SELECT role,text FROM assistant_messages WHERE chat_id=? AND created_at<? AND text<>'' ORDER BY created_at DESC,id DESC LIMIT 20").all(chat.id, before) as unknown as { role: string; text: string }[];
+  if (!rows.length) return '';
+  const transcript = rows.reverse().map(row => (row.role === 'user' ? 'User' : 'Assistant') + ': ' + row.text).join('\n');
+  const clipped = transcript.length > 2200 ? transcript.slice(-2200) : transcript;
+  return 'Previous Pocket Drive conversation context (for continuity only). File claims must still be verified with the current tools, and prior statements about tool availability may be stale.\n' + clipped;
+}
 async function reply(chat: Chat, run: Run, text: string, context: string) {
   const controller = new AbortController(); controllers.set(run.id, controller);
   const timeout = setTimeout(() => controller.abort(), 8 * 60000);
   let output = ''; let saved = 0; let completed = false;
   function persist() { if (runById(run.id).status === 'running') assistantDB().prepare('UPDATE assistant_messages SET text=? WHERE id=?').run(output, run.message_id); }
   try {
-    const response = await worker('/turn', { runId: run.id, threadId: chat.thread_id, text: context ? text + '\n\nCurrent website context (metadata only): ' + context : text, instructions: instructions + '\nOrganization permission for this message: ' + (run.organize ? 'enabled for explicitly requested changes.' : 'disabled; document access only.'), tools, capability: capability(run) }, controller.signal);
+    const history = priorConversation(chat, run.created_at);
+    const turnText = [history, text, context ? 'Current website context (metadata only): ' + context : ''].filter(Boolean).join('\n\n');
+    const response = await worker('/turn', { runId: run.id, threadId: chat.thread_id, text: turnText, instructions: instructions + '\nOrganization permission for this message: ' + (run.organize ? 'enabled for explicitly requested changes.' : 'disabled; document access only.'), tools, capability: capability(run) }, controller.signal);
     if (!response.body) throw new Error('Codex did not start a reply.');
     const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
     try {
