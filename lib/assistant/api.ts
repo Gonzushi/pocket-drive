@@ -1,6 +1,6 @@
 import { authorize } from '../auth';
 import { body, HttpError, json } from '../http';
-import { assistantDB, chatById, createChat, createRun, event, finishRun, runById, snapshot, type Chat, type Run } from './store';
+import { assistantDB, chatById, createChat, createRun, deleteChat, event, finishRun, runById, snapshot, type Chat, type Run } from './store';
 import { capability, executeTool, fileDetails, instructions, tools, verifyCapability, workerSecret } from './tools';
 import { indexStatus, startIndex } from './documents';
 
@@ -68,6 +68,7 @@ export async function assistantApi(request: Request, segments: string[]) {
   }
   if (route[0] === 'chats' && route.length >= 2) {
     const chat = chatById(route[1]);
+    if (route.length === 2 && method === 'DELETE') return json(deleteChat(chat));
     if (route.length === 2 && method === 'GET') {
       const raw = new URL(request.url).searchParams.get('before'); const before = raw ? Number(raw) : undefined;
       if (before !== undefined && (!Number.isSafeInteger(before) || before < 1)) throw new HttpError(400, 'Invalid history page.');
