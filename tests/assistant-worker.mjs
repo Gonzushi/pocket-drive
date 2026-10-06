@@ -21,6 +21,10 @@ export async function fakeWorker(origin, secret) {
     }
     try {
       if (data.text.includes('wait forever')) return;
+      if (data.text.includes('simulate missing tool') && data.threadId) {
+        response.end(JSON.stringify({ type: 'delta', text: 'The document-reading tool is currently unavailable.' }) + '\n' + JSON.stringify({ type: 'completed', status: 'completed' }) + '\n');
+        return;
+      }
       if (data.text.includes('rename without permission')) await tool('create_folder', { name: 'Forbidden' });
       else if (data.text.includes('create my folder')) await tool('create_folder', { name: 'Assistant folder' });
       else {

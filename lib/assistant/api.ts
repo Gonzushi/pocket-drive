@@ -1,6 +1,6 @@
 import { authorize } from '../auth';
 import { body, HttpError, json } from '../http';
-import { assistantDB, chatById, createChat, createRun, deleteChat, event, finishRun, runById, snapshot, type Chat, type Run } from './store';
+import { ASSISTANT_TOOLSET_VERSION, assistantDB, chatById, createChat, createRun, deleteChat, event, finishRun, runById, snapshot, type Chat, type Run } from './store';
 import { capability, executeTool, fileDetails, instructions, tools, verifyCapability, workerSecret } from './tools';
 import { indexStatus, startIndex } from './documents';
 
@@ -17,45 +17,73 @@ async function worker(route: string, data?: unknown, signal?: AbortSignal) {
   if (!response.ok) { let error = 'The assistant could not connect. Try again.'; try { error = (await response.json()).error || error; } catch {} throw new HttpError(response.status >= 500 ? 503 : response.status, error); }
   return response;
 }
-function priorConversation(chat: Chat, before: number) {
-  if (chat.thread_id) return '';
+function priorConversation(chat: Chat, before: number, resuming: boolean) {
+  if (resuming) return '';
   const rows = assistantDB().prepare("SELECT role,text FROM assistant_messages WHERE chat_id=? AND created_at<? AND text<>'' ORDER BY created_at DESC,id DESC LIMIT 20").all(chat.id, before) as unknown as { role: string; text: string }[];
   if (!rows.length) return '';
   const transcript = rows.reverse().map(row => (row.role === 'user' ? 'User' : 'Assistant') + ': ' + row.text).join('\n');
   const clipped = transcript.length > 2200 ? transcript.slice(-2200) : transcript;
   return 'Previous Pocket Drive conversation context (for continuity only). File claims must still be verified with the current tools, and prior statements about tool availability may be stale.\n' + clipped;
 }
+function missingPocketDriveTool(text: string) {
+  return /(?:file[- ]search|document[- ]reading|search_files|read_document|drive|tool).{0,120}(?:unavailable|disabled|not available|cannot access|can't access|couldn't access|could not access)/is.test(text)
+    || /(?:couldn't|could not|can't|cannot).{0,80}(?:open|read|search|access).{0,120}(?:file|document|drive|tool)/is.test(text);
+}
 async function reply(chat: Chat, run: Run, text: string, context: string) {
   const controller = new AbortController(); controllers.set(run.id, controller);
   const timeout = setTimeout(() => controller.abort(), 8 * 60000);
-  let output = ''; let saved = 0; let completed = false;
-  function persist() { if (runById(run.id).status === 'running') assistantDB().prepare('UPDATE assistant_messages SET text=? WHERE id=?').run(output, run.message_id); }
+  const resumableThread = chat.thread_id && chat.toolset_version === ASSISTANT_TOOLSET_VERSION ? chat.thread_id : null;
+  let threadId = resumableThread; let attempt = 0;
   try {
-    const history = priorConversation(chat, run.created_at);
-    const turnText = [history, text, context ? 'Current website context (metadata only): ' + context : ''].filter(Boolean).join('\n\n');
-    const response = await worker('/turn', { runId: run.id, threadId: chat.thread_id, text: turnText, instructions: instructions + '\nOrganization permission for this message: ' + (run.organize ? 'enabled for explicitly requested changes.' : 'disabled; document access only.'), tools, capability: capability(run) }, controller.signal);
-    if (!response.body) throw new Error('Codex did not start a reply.');
-    const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
-    try {
-      while (true) {
-        const chunk = await reader.read(); if (chunk.done) break;
-        buffer += decoder.decode(chunk.value, { stream: true });
-        if (buffer.length > 256 * 1024) throw new Error('Codex sent an oversized reply event.');
-        let newline;
-        while ((newline = buffer.indexOf('\n')) !== -1) {
-          const line = buffer.slice(0, newline); buffer = buffer.slice(newline + 1); if (!line) continue;
-          const value = JSON.parse(line);
-          if (runById(run.id).status !== 'running') { await reader.cancel(); return; }
-          if (value.type === 'thread' && typeof value.id === 'string' && value.id.length < 200) assistantDB().prepare('UPDATE assistant_chats SET thread_id=? WHERE id=?').run(value.id, chat.id);
-          if (value.type === 'delta' && typeof value.text === 'string') { output += value.text; if (output.length > 65536) throw new Error('The reply reached its length limit. Ask for a shorter response.'); if (Date.now() - saved > 200) { persist(); saved = Date.now(); } }
-          if (value.type === 'activity') event(run.id, 'activity', { tool: String(value.tool).slice(0, 80) });
-          if (value.type === 'completed') { persist(); completed = true; const status = ['completed', 'interrupted', 'failed'].includes(value.status) ? value.status : 'failed'; finishRun(run, status, typeof value.error === 'string' ? value.error.slice(0, 500) : null); }
+    while (true) {
+      let output = ''; let saved = 0; let completed = false; let completionStatus = 'failed'; let completionError: string | null = null; let sawToolActivity = false;
+      if (attempt) assistantDB().prepare('UPDATE assistant_messages SET text=? WHERE id=?').run('', run.message_id);
+      const history = priorConversation(chat, run.created_at, Boolean(threadId));
+      const turnText = [history, text, context ? 'Current website context (metadata only): ' + context : ''].filter(Boolean).join('\n\n');
+      function persist() { if (runById(run.id).status === 'running') assistantDB().prepare('UPDATE assistant_messages SET text=? WHERE id=?').run(output, run.message_id); }
+      const response = await worker('/turn', { runId: run.id, threadId, text: turnText, instructions: instructions + '\nOrganization permission for this message: ' + (run.organize ? 'enabled for explicitly requested changes.' : 'disabled; document access only.'), tools, capability: capability(run) }, controller.signal);
+      if (!response.body) throw new Error('Codex did not start a reply.');
+      const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
+      try {
+        while (true) {
+          const chunk = await reader.read(); if (chunk.done) break;
+          buffer += decoder.decode(chunk.value, { stream: true });
+          if (buffer.length > 256 * 1024) throw new Error('Codex sent an oversized reply event.');
+          let newline;
+          while ((newline = buffer.indexOf('\n')) !== -1) {
+            const line = buffer.slice(0, newline); buffer = buffer.slice(newline + 1); if (!line) continue;
+            const value = JSON.parse(line);
+            if (runById(run.id).status !== 'running') { await reader.cancel(); return; }
+            if (value.type === 'thread' && typeof value.id === 'string' && value.id.length < 200) {
+              assistantDB().prepare('UPDATE assistant_chats SET thread_id=?,toolset_version=? WHERE id=?').run(value.id, ASSISTANT_TOOLSET_VERSION, chat.id);
+            }
+            if (value.type === 'delta' && typeof value.text === 'string') {
+              output += value.text;
+              if (output.length > 65536) throw new Error('The reply reached its length limit. Ask for a shorter response.');
+              if (Date.now() - saved > 200) { persist(); saved = Date.now(); }
+            }
+            if (value.type === 'activity') { sawToolActivity = true; event(run.id, 'activity', { tool: String(value.tool).slice(0, 80) }); }
+            if (value.type === 'completed') {
+              persist(); completed = true;
+              completionStatus = ['completed', 'interrupted', 'failed'].includes(value.status) ? value.status : 'failed';
+              completionError = typeof value.error === 'string' ? value.error.slice(0, 500) : null;
+            }
+          }
         }
+      } finally { reader.releaseLock(); }
+      if (!completed) throw new Error('The connection closed before the reply finished. Send a new message to continue.');
+
+      const missingTools = completionStatus === 'completed' && !sawToolActivity && missingPocketDriveTool(output);
+      if (missingTools) {
+        assistantDB().prepare('UPDATE assistant_chats SET thread_id=NULL,toolset_version=NULL WHERE id=?').run(chat.id);
+        if (threadId && attempt === 0) { threadId = null; attempt += 1; continue; }
       }
-    } finally { reader.releaseLock(); }
-    if (!completed) throw new Error('The connection closed before the reply finished. Send a new message to continue.');
-  } catch (error) { persist(); finishRun(run, 'failed', controller.signal.aborted ? 'Reply timed out or was stopped.' : (error as Error).message.slice(0, 500)); }
-  finally { clearTimeout(timeout); controllers.delete(run.id); }
+      finishRun(run, completionStatus, completionError);
+      break;
+    }
+  } catch (error) {
+    finishRun(run, 'failed', controller.signal.aborted ? 'Reply timed out or was stopped.' : (error as Error).message.slice(0, 500));
+  } finally { clearTimeout(timeout); controllers.delete(run.id); }
 }
 export async function assistantApi(request: Request, segments: string[]) {
   const route = segments.slice(1); const method = request.method;

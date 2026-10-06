@@ -3,13 +3,13 @@ import { db, transaction } from '../db';
 import { HttpError } from '../http';
 import { validId } from '../storage';
 
-const ASSISTANT_TOOLSET_VERSION = '1';
+export const ASSISTANT_TOOLSET_VERSION = '2';
 let initialized = false;
 export function assistantDB() {
   const database = db();
   if (!initialized) {
     database.exec(`
-      CREATE TABLE IF NOT EXISTS assistant_chats(id TEXT PRIMARY KEY,title TEXT NOT NULL,thread_id TEXT,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS assistant_chats(id TEXT PRIMARY KEY,title TEXT NOT NULL,thread_id TEXT,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,toolset_version TEXT);
       CREATE TABLE IF NOT EXISTS assistant_messages(id TEXT PRIMARY KEY,chat_id TEXT NOT NULL,role TEXT NOT NULL,text TEXT NOT NULL,created_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS assistant_messages_chat ON assistant_messages(chat_id,created_at);
       CREATE TABLE IF NOT EXISTS assistant_runs(id TEXT PRIMARY KEY,chat_id TEXT NOT NULL,message_id TEXT NOT NULL,status TEXT NOT NULL,organize INTEGER NOT NULL,created_at INTEGER NOT NULL,error TEXT);
@@ -19,23 +19,13 @@ export function assistantDB() {
       CREATE VIRTUAL TABLE IF NOT EXISTS assistant_search USING fts5(file_id UNINDEXED,section UNINDEXED,text,tokenize='unicode61');
       UPDATE assistant_runs SET status='interrupted',error='The server restarted. Send a new message to continue.' WHERE status='running';
     `);
-    const version = database.prepare("SELECT value FROM assistant_meta WHERE key='toolset_version'").get() as { value?: string } | undefined;
-    if (version?.value !== ASSISTANT_TOOLSET_VERSION) {
-      database.exec('BEGIN IMMEDIATE');
-      try {
-        // Dynamic tools are persisted when a Codex thread is first created and cannot
-        // currently be replaced on thread/resume. Start legacy conversations on a
-        // fresh tool-capable thread after a toolset change.
-        database.prepare('UPDATE assistant_chats SET thread_id=NULL WHERE thread_id IS NOT NULL').run();
-        database.prepare("INSERT INTO assistant_meta(key,value) VALUES('toolset_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(ASSISTANT_TOOLSET_VERSION);
-        database.exec('COMMIT');
-      } catch (error) { database.exec('ROLLBACK'); throw error; }
-    }
+    const chatColumns = database.prepare('PRAGMA table_info(assistant_chats)').all() as unknown as { name: string }[];
+    if (!chatColumns.some(column => column.name === 'toolset_version')) database.exec('ALTER TABLE assistant_chats ADD COLUMN toolset_version TEXT');
     initialized = true;
   }
   return database;
 }
-export interface Chat { id: string; title: string; thread_id: string | null; created_at: number; updated_at: number }
+export interface Chat { id: string; title: string; thread_id: string | null; created_at: number; updated_at: number; toolset_version: string | null }
 export interface Run { id: string; chat_id: string; message_id: string; status: string; organize: number; created_at: number; error: string | null }
 export function chatById(id: string) {
   if (!validId(id)) throw new HttpError(404, 'Conversation not found.');
@@ -56,7 +46,7 @@ export function createChat() {
   const database = assistantDB();
   if (Number(database.prepare('SELECT COUNT(*) AS n FROM assistant_chats').get()!.n) >= 200) throw new HttpError(409, 'The conversation limit is 200.');
   const id = randomUUID(); const now = Date.now();
-  database.prepare('INSERT INTO assistant_chats VALUES(?,?,NULL,?,?)').run(id, 'New conversation', now, now);
+  database.prepare('INSERT INTO assistant_chats(id,title,thread_id,created_at,updated_at,toolset_version) VALUES(?,?,NULL,?,?,NULL)').run(id, 'New conversation', now, now);
   return chatById(id);
 }
 export function createRun(chat: Chat, text: string, organize: boolean) {
