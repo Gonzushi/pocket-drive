@@ -3,6 +3,7 @@ import { db, transaction } from '../db';
 import { HttpError } from '../http';
 import { validId } from '../storage';
 
+const ASSISTANT_TOOLSET_VERSION = '1';
 let initialized = false;
 export function assistantDB() {
   const database = db();
@@ -13,10 +14,23 @@ export function assistantDB() {
       CREATE INDEX IF NOT EXISTS assistant_messages_chat ON assistant_messages(chat_id,created_at);
       CREATE TABLE IF NOT EXISTS assistant_runs(id TEXT PRIMARY KEY,chat_id TEXT NOT NULL,message_id TEXT NOT NULL,status TEXT NOT NULL,organize INTEGER NOT NULL,created_at INTEGER NOT NULL,error TEXT);
       CREATE TABLE IF NOT EXISTS assistant_events(id INTEGER PRIMARY KEY,run_id TEXT NOT NULL,kind TEXT NOT NULL,data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS assistant_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS assistant_documents(file_id TEXT PRIMARY KEY,fingerprint TEXT NOT NULL,sections TEXT NOT NULL,limited INTEGER NOT NULL,error TEXT);
       CREATE VIRTUAL TABLE IF NOT EXISTS assistant_search USING fts5(file_id UNINDEXED,section UNINDEXED,text,tokenize='unicode61');
       UPDATE assistant_runs SET status='interrupted',error='The server restarted. Send a new message to continue.' WHERE status='running';
     `);
+    const version = database.prepare("SELECT value FROM assistant_meta WHERE key='toolset_version'").get() as { value?: string } | undefined;
+    if (version?.value !== ASSISTANT_TOOLSET_VERSION) {
+      database.exec('BEGIN IMMEDIATE');
+      try {
+        // Dynamic tools are persisted when a Codex thread is first created and cannot
+        // currently be replaced on thread/resume. Start legacy conversations on a
+        // fresh tool-capable thread after a toolset change.
+        database.prepare('UPDATE assistant_chats SET thread_id=NULL WHERE thread_id IS NOT NULL').run();
+        database.prepare("INSERT INTO assistant_meta(key,value) VALUES('toolset_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(ASSISTANT_TOOLSET_VERSION);
+        database.exec('COMMIT');
+      } catch (error) { database.exec('ROLLBACK'); throw error; }
+    }
     initialized = true;
   }
   return database;
