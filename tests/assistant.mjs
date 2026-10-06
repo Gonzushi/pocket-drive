@@ -86,6 +86,21 @@ test('personal assistant integration', { timeout: 120000 }, async t => {
     const response = await fetch(origin + '/api/items/move', { method: 'POST', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ items: [{ type: 'file', id: file.id }], destination_id: destination.id }) }); assert.equal(response.status, 200);
     const value = await (await request('chats/' + chat.id)).json(); const source = value.events.flatMap(event => event.data.sources || []).find(source => source.id === file.id); assert.equal(source.location, 'My files / Assistant folder'); assert.equal(source.folder_url, '/files?folder=' + destination.id);
   });
+  await t.test('refreshes legacy tool threads and preserves recent chat context', async () => {
+    await stop();
+    const sqlite = process.getBuiltinModule('node:sqlite'); const database = new sqlite.DatabaseSync(join(root, 'metadata.sqlite'));
+    database.prepare("UPDATE assistant_meta SET value='0' WHERE key='toolset_version'").run(); database.close();
+    await start();
+    const migrated = await (await request('chats/' + chat.id)).json(); assert.equal(migrated.chat.thread_id, null);
+    const before = fixture.requests.length; await send('Read project.txt after tool refresh');
+    const turn = fixture.requests.slice(before).find(entry => entry.runId); assert(turn); assert.equal(turn.threadId, null);
+    assert.match(turn.text, /Previous Pocket Drive conversation context/); assert.match(turn.text, /Read project.txt after tool refresh/);
+  });
   await t.test('conversation, thread ID, index and login session survive a server restart', async () => { await stop(); await start(); const value = await (await request('chats/' + chat.id)).json(); assert.equal(value.chat.thread_id, 'fixture-thread-001'); assert(value.messages.length > 10); assert((await (await request('status')).json()).index.indexed >= 2); await send('Read project.txt'); });
   await t.test('restart marks unfinished replies interrupted', async () => { await post('chats/' + chat.id + '/messages', { text: 'wait forever' }); await stop(); await start(); const value = await (await request('chats/' + chat.id)).json(); assert.equal(value.runs[0].status, 'interrupted'); });
+  await t.test('deletes a saved conversation and its history', async () => {
+    const response = await request('chats/' + chat.id, { method: 'DELETE' }); assert.equal(response.status, 200, await response.clone().text()); assert.deepEqual(await response.json(), { success: true });
+    assert.equal((await request('chats/' + chat.id)).status, 404);
+    const list = await (await request('chats')).json(); assert(!list.chats.some(entry => entry.id === chat.id));
+  });
 });
