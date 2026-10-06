@@ -58,6 +58,17 @@ export function createRun(chat: Chat, text: string, organize: boolean) {
     return runById(id);
   });
 }
+export function deleteChat(chat: Chat) {
+  const database = assistantDB();
+  return transaction(() => {
+    if (database.prepare("SELECT 1 FROM assistant_runs WHERE chat_id=? AND status='running' LIMIT 1").get(chat.id)) throw new HttpError(409, 'Stop the active reply before deleting this conversation.');
+    database.prepare('DELETE FROM assistant_events WHERE run_id IN (SELECT id FROM assistant_runs WHERE chat_id=?)').run(chat.id);
+    database.prepare('DELETE FROM assistant_runs WHERE chat_id=?').run(chat.id);
+    database.prepare('DELETE FROM assistant_messages WHERE chat_id=?').run(chat.id);
+    database.prepare('DELETE FROM assistant_chats WHERE id=?').run(chat.id);
+    return { success: true };
+  });
+}
 export function finishRun(run: Run, status: string, error: string | null = null) {
   assistantDB().prepare("UPDATE assistant_runs SET status=?,error=? WHERE id=? AND status='running'").run(status, error, run.id);
 }
