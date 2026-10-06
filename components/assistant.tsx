@@ -5,7 +5,7 @@ import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Bot, Plus, Send, Square, FileText, FolderClosed, LoaderCircle, LogOut, ShieldCheck } from 'lucide-react';
+import { Bot, Plus, Send, Square, FileText, FolderClosed, LoaderCircle, LogOut, ShieldCheck, Trash2 } from 'lucide-react';
 import { api as clientApi } from '@/lib/client';
 import type { FileItem } from '@/lib/types';
 const FilePreview = dynamic(() => import('./file-preview'), { ssr: false });
@@ -42,6 +42,16 @@ export default function Assistant() {
   const lastMessage = snapshot?.messages.at(-1);
   useEffect(() => { end.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, [lastMessage?.id, lastMessage?.text]);
   async function newChat() { setError(''); setBusy(true); try { const chat = await api<Chat>('/api/assistant/chats', { method: 'POST' }); setSelected(chat.id); await refreshChats(); } catch (err) { setError((err as Error).message); } finally { setBusy(false); } }
+  async function deleteConversation(chat: Chat) {
+    if (busy || (active && selected === chat.id)) return;
+    if (!window.confirm(`Delete "${chat.title}"? This conversation cannot be recovered.`)) return;
+    setError(''); setBusy(true);
+    try {
+      await api('/api/assistant/chats/' + chat.id, { method: 'DELETE' });
+      if (selected === chat.id) { setSelected(null); setSnapshot(null); setOlder(null); }
+      await refreshChats();
+    } catch (err) { setError((err as Error).message); } finally { setBusy(false); }
+  }
   async function submit(event: React.FormEvent) {
     event.preventDefault(); if (!text.trim() || active || busy) return; setError(''); setBusy(true);
     try {
@@ -65,7 +75,7 @@ export default function Assistant() {
   return <section className="assistant-page">
     <div className="assistant-heading"><div><h1><Bot size={28} />Drive assistant</h1><p>Find answers in your files, with sources you can open.</p></div><span className="assistant-model">GPT-6.1 Sol · Medium</span></div>
     {error && <p className="error-text assistant-alert" role="alert">{error}</p>}
-    <div className="assistant-layout"><aside className="assistant-history" aria-label="Conversations"><button className="btn primary" onClick={newChat} disabled={busy}><Plus size={16} />New conversation</button><div className="assistant-chat-list">{chats.map(chat => <button key={chat.id} className={selected === chat.id ? 'selected' : ''} onClick={() => setSelected(chat.id)} title={chat.title}>{chat.title}</button>)}</div>
+    <div className="assistant-layout"><aside className="assistant-history" aria-label="Conversations"><button className="btn primary" onClick={newChat} disabled={busy}><Plus size={16} />New conversation</button><div className="assistant-chat-list">{chats.map(chat => <div className="assistant-chat-row" key={chat.id}><button className={'assistant-chat-select' + (selected === chat.id ? ' selected' : '')} onClick={() => setSelected(chat.id)} title={chat.title}>{chat.title}</button><button className="assistant-chat-delete" type="button" onClick={() => void deleteConversation(chat)} disabled={busy || Boolean(active && selected === chat.id)} aria-label={'Delete conversation ' + chat.title} title="Delete conversation"><Trash2 size={14} /></button></div>)}</div>
       {status?.connected && <button className="assistant-settings-toggle btn" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(!settingsOpen)}><ShieldCheck size={15} />{settingsOpen ? 'Hide account details' : 'Codex connected · Account details'}</button>}
       <div className={'assistant-account' + (status?.connected && !settingsOpen ? ' mobile-collapsed' : '')}>{status?.connected ? <><ShieldCheck size={18} /><strong>Personal Codex connected</strong><span>{status.account?.email}</span><span>{status.account?.plan} subscription · Usage limits apply</span><button className="btn" onClick={disconnect} disabled={busy || Boolean(active)}><LogOut size={14} />Disconnect</button></> : <><strong>{status?.offline ? 'Worker unavailable' : 'Connect personal Codex'}</strong><p>{status?.enabled ? status.error || 'Sign in with the ChatGPT account you use for Codex.' : 'Deploy the Codex worker using the repository’s assistant setup guide.'}</p><button className="btn" onClick={connect} disabled={busy || !status?.enabled || status.offline}>Connect Codex</button></>}
       {login && !status?.connected && <div className="assistant-device"><p>Open the sign-in page and enter this code:</p><code>{login.userCode}</code><a className="btn primary" href={login.verificationUrl} target="_blank" rel="noopener noreferrer">Open Codex sign-in</a><span>This page updates when sign-in finishes.</span></div>}
