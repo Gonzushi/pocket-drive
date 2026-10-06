@@ -18,7 +18,7 @@ function cached(file: StoredFile): Document | null {
 }
 function extract(kind: string, file: string, extension: string, text?: string): Promise<Document> {
   return new Promise((resolve, reject) => {
-    const child = spawn('prlimit', ['--cpu=45', '--fsize=4194304', '--', process.execPath, '--max-old-space-size=192', path.join(process.cwd(), 'scripts/extract-document.mjs')], { detached: true, stdio: ['pipe', 'pipe', 'pipe'], env: { PATH: process.env.PATH, LANG: 'C.UTF-8', NODE_ENV: 'production', PDFTOTEXT_BIN: process.env.PDFTOTEXT_BIN } });
+    const child = spawn('prlimit', ['--cpu=45', '--fsize=4194304', '--', process.execPath, '--max-old-space-size=192', path.join(process.cwd(), 'scripts/extract-document.ts')], { detached: true, stdio: ['pipe', 'pipe', 'pipe'], env: { PATH: process.env.PATH, LANG: 'C.UTF-8', NODE_ENV: 'production', PDFTOTEXT_BIN: process.env.PDFTOTEXT_BIN } });
     let output = ''; let size = 0; let settled = false;
     const finish = (error?: Error) => { if (settled) return; settled = true; clearTimeout(timer); try { process.kill(-child.pid!, 'SIGKILL'); } catch {} if (error) reject(error); else { try { resolve(JSON.parse(output)); } catch { reject(new Error('Document extraction failed.')); } } };
     const timer = setTimeout(() => finish(new Error('Document extraction exceeded its time limit.')), 45000);

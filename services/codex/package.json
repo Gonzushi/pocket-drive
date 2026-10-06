@@ -2,6 +2,20 @@
   "name": "pocket-drive-codex-worker",
   "private": true,
   "type": "module",
-  "scripts": { "start": "node server.mjs", "test": "node --test test.mjs" },
-  "dependencies": { "@openai/codex": "0.160.0" }
+  "scripts": {
+    "start": "node server.ts",
+    "build": "tsc --noEmit",
+    "test": "node --test test.ts",
+    "smoke": "node smoke.ts"
+  },
+  "dependencies": {
+    "@openai/codex": "0.160.0"
+  },
+  "engines": {
+    "node": ">=24.13.0 <25"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "@types/node": "^24.0.0"
+  }
 }

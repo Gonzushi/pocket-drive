@@ -1,3 +1,4 @@
+import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -9,15 +10,15 @@ import { createServer } from 'node:net';
 
 test('scoped search and server-side sorting', { timeout: 120000 }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'pocket-listing-'));
-  const probe = createServer(); await new Promise(r => probe.listen(0, '127.0.0.1', r)); const port = probe.address().port; await new Promise(r => probe.close(r));
+  const probe = createServer(); await new Promise<void>(r => probe.listen(0, '127.0.0.1', r)); const port = (probe.address() as AddressInfo).port; await new Promise<void>(r => probe.close(() => r()));
   const origin = `http://127.0.0.1:${port}`; const password = randomBytes(24).toString('hex'); const salt = randomBytes(16).toString('hex');
   const child = spawn(process.execPath, ['.next/standalone/server.js'], { env: { ...process.env, NODE_ENV: 'production', HOSTNAME: '127.0.0.1', PORT: String(port), APP_ORIGIN: origin, STORAGE_PATH: root, MIN_FREE_DISK_BYTES: '0', ADMIN_USERNAME: 'admin', ADMIN_PASSWORD_HASH: `scrypt:${salt}:${scryptSync(password, salt, 64).toString('hex')}`, SESSION_SECRET: randomBytes(32).toString('hex') }, stdio: ['ignore', 'pipe', 'pipe'] });
   let logs = ''; child.stdout.on('data', d => logs += d); child.stderr.on('data', d => logs += d);
-  t.after(async () => { if (child.exitCode === null) { const done = new Promise(r => child.once('exit', r)); child.kill('SIGTERM'); await done; } await rm(root, { recursive: true, force: true }); });
-  for (let i = 0; i < 150; i++) { try { if ((await fetch(origin + '/api/health')).ok) break; } catch {} if (child.exitCode !== null) throw new Error(logs); await new Promise(r => setTimeout(r, 100)); }
+  t.after(async () => { if (child.exitCode === null) { const done = new Promise<void>(r => child.once('exit', r)); child.kill('SIGTERM'); await done; } await rm(root, { recursive: true, force: true }); });
+  for (let i = 0; i < 150; i++) { try { if ((await fetch(origin + '/api/health')).ok) break; } catch {} if (child.exitCode !== null) throw new Error(logs); await new Promise<void>(r => setTimeout(r, 100)); }
   const login = await fetch(origin + '/api/auth/login', { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'admin', password }) }); assert.equal(login.status, 200);
   const cookie = login.headers.get('set-cookie').split(';')[0];
-  const session = (path, options = {}) => fetch(origin + path, { ...options, headers: { Cookie: cookie, Origin: origin, ...options.headers } });
+  const session = (path, options: RequestInit = {}) => fetch(origin + path, { ...options, headers: { Cookie: cookie, Origin: origin, ...options.headers } });
   const post = async (path, body) => { const r = await session(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); assert.equal(r.status, 201, await r.clone().text()); return r.json(); };
   const folder = async (name, parent_id = 'root') => post('/api/folders', { name, parent_id });
   const upload = async (name, size, folder_id = 'root') => { const form = new FormData(); form.append('file', new Blob([Buffer.alloc(size, 65)]), name); const r = await session(`/api/files?folder_id=${folder_id}`, { method: 'POST', body: form }); assert.equal(r.status, 201, await r.clone().text()); return r.json(); };

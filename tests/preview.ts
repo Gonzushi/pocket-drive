@@ -1,3 +1,4 @@
+import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
@@ -11,16 +12,16 @@ import JSZip from 'jszip';
 
 test('authenticated bounded previews', {timeout:120000}, async t => {
   const root = await mkdtemp(join(tmpdir(), 'pocket-preview-'));
-  const probe = createServer(); await new Promise(resolve => probe.listen(0,'127.0.0.1',resolve)); const port=probe.address().port; await new Promise(resolve => probe.close(resolve));
+  const probe = createServer(); await new Promise<void>(resolve => probe.listen(0,'127.0.0.1',resolve)); const port=(probe.address() as AddressInfo).port; await new Promise<void>(resolve => probe.close(() => resolve()));
   const origin = `http://127.0.0.1:${port}`; const password=randomBytes(24).toString('hex'); const salt=randomBytes(16).toString('hex');
   const sessionSecret=randomBytes(32).toString('hex');
   const launch=()=>spawn(process.execPath,['.next/standalone/server.js'],{env:{...process.env,NODE_ENV:'production',HOSTNAME:'127.0.0.1',PORT:String(port),APP_ORIGIN:origin,STORAGE_PATH:root,MIN_FREE_DISK_BYTES:'0',ADMIN_USERNAME:'admin',ADMIN_PASSWORD_HASH:`scrypt:${salt}:${scryptSync(password,salt,64).toString('hex')}`,SESSION_SECRET:sessionSecret},stdio:['ignore','pipe','pipe']});
   let child=launch(); let preparedDocument;
   let logs=''; child.stdout.on('data',d=>logs+=d);child.stderr.on('data',d=>logs+=d);
-  t.after(async()=>{ if(child.exitCode===null){const exit=new Promise(resolve=>child.once('exit',resolve));child.kill('SIGTERM');await exit;}await rm(root,{recursive:true,force:true});});
-  for(let i=0;i<150;i++){try{if((await fetch(origin+'/api/health')).ok)break;}catch{}if(child.exitCode!==null)throw new Error(logs);await new Promise(resolve=>setTimeout(resolve,100));}
+  t.after(async()=>{ if(child.exitCode===null){const exit=new Promise<void>(resolve =>child.once('exit',resolve));child.kill('SIGTERM');await exit;}await rm(root,{recursive:true,force:true});});
+  for(let i=0;i<150;i++){try{if((await fetch(origin+'/api/health')).ok)break;}catch{}if(child.exitCode!==null)throw new Error(logs);await new Promise<void>(resolve =>setTimeout(resolve,100));}
   const login=await fetch(origin+'/api/auth/login',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({username:'admin',password})});assert.equal(login.status,200);const cookie=login.headers.get('set-cookie').split(';')[0];
-  const session=(path,options={})=>fetch(origin+path,{...options,headers:{Cookie:cookie,Origin:origin,...options.headers}});
+  const session=(path,options: RequestInit = {})=>fetch(origin+path,{...options,headers:{Cookie:cookie,Origin:origin,...options.headers}});
   const upload=async(name,bytes)=>{const form=new FormData();form.append('file',new Blob([bytes]),name);const response=await session('/api/files',{method:'POST',body:form});assert.equal(response.status,201,await response.clone().text());return response.json();};
   const createKey=async scopes=>(await(await session('/api/keys',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:scopes.join('-'),scopes})})).json()).token;
   const readKey=await createKey(['read']); const uploadKey=await createKey(['upload']);
@@ -85,11 +86,11 @@ test('authenticated bounded previews', {timeout:120000}, async t => {
     assert.equal((await(await session(endpoint)).json()).status,'idle');
     assert.equal((await session(endpoint+'?variant=unknown',{method:'POST'})).status,415);
     assert.equal((await fetch(origin+endpoint,{method:'POST',headers:{Authorization:'Bearer '+readKey}})).status,202);
-    for(let i=0;i<100;i++) { const status=await(await session(endpoint)).json(); if(status.status==='failed') { assert.match(status.error,/damaged|protected/); break; } if(i===99)assert.fail('Conversion did not fail safely'); await new Promise(resolve=>setTimeout(resolve,100)); }
+    for(let i=0;i<100;i++) { const status=await(await session(endpoint)).json(); if(status.status==='failed') { assert.match(status.error,/damaged|protected/); break; } if(i===99)assert.fail('Conversion did not fail safely'); await new Promise<void>(resolve =>setTimeout(resolve,100)); }
     const external = new JSZip(); external.file('word/_rels/document.xml.rels','<Relationships><Relationship TargetMode="External" Target="http://example.invalid/private"/></Relationships>');
     const linked = await upload('external.docx',await external.generateAsync({type:'nodebuffer'}));
     const linkedEndpoint='/api/files/'+linked.id+'/preview/prepare';await session(linkedEndpoint,{method:'POST'});
-    for(let i=0;i<100;i++){const status=await(await session(linkedEndpoint)).json();if(status.status==='failed'){assert.match(status.error,/external links/);break;}if(i===99)assert.fail('External content not rejected');await new Promise(resolve=>setTimeout(resolve,100));}
+    for(let i=0;i<100;i++){const status=await(await session(linkedEndpoint)).json();if(status.status==='failed'){assert.match(status.error,/external links/);break;}if(i===99)assert.fail('External content not rejected');await new Promise<void>(resolve =>setTimeout(resolve,100));}
   });
   await t.test('video preparation puts metadata first, supports seeking, and preserves originals',async()=>{
     const source = join(root,'fixture.mp4');
@@ -100,7 +101,7 @@ test('authenticated bounded previews', {timeout:120000}, async t => {
       const endpoint='/api/files/'+file.id+'/preview/prepare?variant='+variant;
       assert.equal((await session(endpoint,{method:'POST'})).status,202);
       let ready;
-      for(let i=0;i<600;i++){const status=await(await session(endpoint)).json();if(status.status==='ready'){ready=status;break;}if(status.status==='failed')assert.fail(status.error);await new Promise(resolve=>setTimeout(resolve,100));}
+      for(let i=0;i<600;i++){const status=await(await session(endpoint)).json();if(status.status==='ready'){ready=status;break;}if(status.status==='failed')assert.fail(status.error);await new Promise<void>(resolve =>setTimeout(resolve,100));}
       assert(ready,'Video preparation did not finish');
       const response=await session(ready.url);assert.equal(response.headers.get('content-type'),'video/mp4');assert.equal(response.headers.get('cache-control'),'private, no-store');const result=Buffer.from(await response.arrayBuffer());assert(result.indexOf('moov')<result.indexOf('mdat'));
       const range=await session(ready.url,{headers:{Range:'bytes=0-65535'}});assert.equal(range.status,206);assert.equal((await range.arrayBuffer()).byteLength,Math.min(result.length,65536));
@@ -123,17 +124,17 @@ test('authenticated bounded previews', {timeout:120000}, async t => {
     const file=await upload('document.docx',await archive.generateAsync({type:'nodebuffer'}));
     assert.equal((await(await session('/api/files/'+file.id+'/preview')).json()).kind,'office');
     const endpoint='/api/files/'+file.id+'/preview/prepare';await session(endpoint,{method:'POST'});
-    let ready;for(let i=0;i<600;i++){const status=await(await session(endpoint)).json();if(status.status==='ready'){ready=status;break;}if(status.status==='failed')assert.fail(status.error);await new Promise(resolve=>setTimeout(resolve,100));}
+    let ready;for(let i=0;i<600;i++){const status=await(await session(endpoint)).json();if(status.status==='ready'){ready=status;break;}if(status.status==='failed')assert.fail(status.error);await new Promise<void>(resolve =>setTimeout(resolve,100));}
     assert(ready,'Document preparation did not finish'); const pdf=await session(ready.url);assert.equal(pdf.headers.get('content-type'),'application/pdf');assert(Buffer.from(await pdf.arrayBuffer()).subarray(0,5).equals(Buffer.from('%PDF-')));preparedDocument={id:file.id,url:ready.url};
   });
   await t.test('cached previews survive restarts and interrupted jobs recover',async()=>{
     const before=Buffer.from(await(await session(preparedDocument.url)).arrayBuffer());
-    const exit=new Promise(resolve=>child.once('exit',resolve));child.kill('SIGTERM');await exit;
+    const exit=new Promise<void>(resolve =>child.once('exit',resolve));child.kill('SIGTERM');await exit;
     const {DatabaseSync}=await import('node:sqlite');const database=new DatabaseSync(join(root,'metadata.sqlite'));
     const file=await database.prepare("SELECT id FROM files WHERE name='broken.docx'").get();
     database.prepare("UPDATE preview_jobs SET status='running',expires=?,error=NULL WHERE file_id=?").run(Date.now()+999999,file.id);database.close();
     child=launch();child.stdout.on('data',d=>logs+=d);child.stderr.on('data',d=>logs+=d);
-    for(let i=0;i<150;i++){try{if((await fetch(origin+'/api/health')).ok)break;}catch{}if(child.exitCode!==null)throw new Error(logs);await new Promise(resolve=>setTimeout(resolve,100));}
+    for(let i=0;i<150;i++){try{if((await fetch(origin+'/api/health')).ok)break;}catch{}if(child.exitCode!==null)throw new Error(logs);await new Promise<void>(resolve =>setTimeout(resolve,100));}
     const status=await(await session('/api/files/'+preparedDocument.id+'/preview/prepare')).json();assert.equal(status.status,'ready');assert.equal(status.url,preparedDocument.url);
     assert.deepEqual(Buffer.from(await(await session(preparedDocument.url)).arrayBuffer()),before);
     const interrupted=await(await session('/api/files/'+file.id+'/preview/prepare')).json();assert.equal(interrupted.status,'failed');assert.match(interrupted.error,/interrupted/);

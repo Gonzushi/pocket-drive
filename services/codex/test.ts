@@ -1,11 +1,12 @@
+import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { once, EventEmitter } from 'node:events';
-import { Codex, productionCodex } from './protocol.mjs';
-import { createWorker } from './server.mjs';
+import { Codex, productionCodex } from './protocol.ts';
+import { createWorker } from './server.ts';
 import { createServer } from 'node:http';
 
 test('Codex subprocess preserves HTTPS trust and routing without inheriting application secrets', async t => {
@@ -21,7 +22,7 @@ test('Codex subprocess preserves HTTPS trust and routing without inheriting appl
   const production = productionCodex(settings);
   assert(production.args.includes('code_mode.direct_only_tool_namespaces=["functions"]'));
   assert(production.args.some((value, index) => value === '--disable' && production.args[index + 1] === 'code_mode_host'));
-  const client = new Codex(process.execPath, [fileURLToPath(new URL('./fixture.mjs', import.meta.url))], production.environment);
+  const client = new Codex(process.execPath, [fileURLToPath(new URL('./fixture.ts', import.meta.url))], production.environment);
   t.after(async () => { const stopped = client.child && once(client, 'stopped'); client.stop(); if (stopped) await stopped; await rm(home, { recursive: true, force: true }); });
   await client.start();
   const actual = await client.call('environment');
@@ -32,7 +33,7 @@ test('Codex subprocess preserves HTTPS trust and routing without inheriting appl
 
 test('Codex JSON-RPC transport handles concurrent calls, streaming, server tools and process failure', async t => {
   const home = await mkdtemp(tmpdir() + '/pocket-codex-');
-  const client = new Codex(process.execPath, [fileURLToPath(new URL('./fixture.mjs', import.meta.url))], { PATH: process.env.PATH, HOME: home, CODEX_HOME: home + '/codex' });
+  const client = new Codex(process.execPath, [fileURLToPath(new URL('./fixture.ts', import.meta.url))], { PATH: process.env.PATH, HOME: home, CODEX_HOME: home + '/codex' });
   t.after(async () => { client.stop(); await rm(home, { recursive: true, force: true }); });
   await Promise.all([client.start(), client.start()]);
   assert.deepEqual(await Promise.all([client.call('echo', { a: 1 }), client.call('echo', { a: 2 })]), [{ echo: { a: 1 } }, { echo: { a: 2 } }]);
@@ -62,7 +63,7 @@ test('private worker enforces personal auth, exact model, bounded tools and nati
           const threadId = params.threadId;
           this.emit('notification', { method: 'turn/started', params: { threadId, turn: { id: 'turn-1' } } });
           this.emit('request', { id: 'shell-1', method: 'item/commandExecution/requestApproval', params: { threadId } });
-          await new Promise(resolve => { toolResult = resolve; this.emit('request', { id: 'tool-1', method: 'item/tool/call', params: { threadId, tool: 'search_files', arguments: { query: 'project' } } }); });
+          await new Promise<void>(resolve => { toolResult = resolve; this.emit('request', { id: 'tool-1', method: 'item/tool/call', params: { threadId, tool: 'search_files', arguments: { query: 'project' } } }); });
           this.emit('notification', { method: 'item/agentMessage/delta', params: { threadId, turnId: 'turn-1', delta: 'A sourced answer.' } });
           this.emit('notification', { method: 'turn/completed', params: { threadId, turn: { id: 'turn-1', status: 'completed' } } });
         }, 10);
@@ -73,13 +74,13 @@ test('private worker enforces personal auth, exact model, bounded tools and nati
   }
   const toolRequests = [];
   const callback = createServer(async (request, response) => { let body = ''; for await (const part of request) body += part; toolRequests.push({ auth: request.headers.authorization, body: JSON.parse(body) }); response.setHeader('Content-Type', 'application/json'); response.end('{"files":[]}'); });
-  await new Promise(resolve => callback.listen(0, '127.0.0.1', resolve));
+  await new Promise<void>(resolve => callback.listen(0, '127.0.0.1', resolve));
   const client = new Fixture(); const secret = 'test-secret-'.repeat(5);
-  const worker = createWorker(client, { secret, callback: 'http://127.0.0.1:' + callback.address().port });
-  await new Promise(resolve => worker.server.listen(0, '127.0.0.1', resolve));
-  t.after(async () => { await worker.close(); await new Promise(resolve => { callback.closeAllConnections(); callback.close(resolve); }); });
-  const origin = 'http://127.0.0.1:' + worker.server.address().port;
-  const request = (url, data) => fetch(origin + url, { method: data ? 'POST' : 'GET', headers: { Authorization: 'Bearer ' + secret, 'Content-Type': 'application/json' }, body: data ? JSON.stringify(data) : undefined });
+  const worker = createWorker(client, { secret, callback: 'http://127.0.0.1:' + (callback.address() as AddressInfo).port });
+  await new Promise<void>(resolve => worker.server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { await worker.close(); await new Promise<void>(resolve => { callback.closeAllConnections(); callback.close(() => resolve()); }); });
+  const origin = 'http://127.0.0.1:' + (worker.server.address() as AddressInfo).port;
+  const request = (url: string, data?: unknown) => fetch(origin + url, { method: data ? 'POST' : 'GET', headers: { Authorization: 'Bearer ' + secret, 'Content-Type': 'application/json' }, body: data ? JSON.stringify(data) : undefined });
   assert.equal((await fetch(origin + '/status')).status, 401);
   assert.equal((await (await request('/status')).json()).connected, false);
   const turn = { runId: 'run-1', capability: 'signed-run-capability', text: 'Summarize my files', instructions: 'Use documents only.', tools: [{ type: 'function', name: 'search_files', description: 'Search', inputSchema: { type: 'object' } }] };
@@ -88,7 +89,7 @@ test('private worker enforces personal auth, exact model, bounded tools and nati
   const login = await (await request('/login', {})).json(); assert.equal(login.userCode, 'CODE-TEST'); assert.equal(login.loginId, undefined);
   account = { type: 'chatgpt', email: 'test@example.com', planType: 'plus', accessToken: 'NEVER-EXPOSE' };
   const status = await (await request('/status')).json(); assert.equal(status.connected, true); assert.equal(status.account.accessToken, undefined);
-  const response = await request('/turn', turn); assert.equal(response.status, 200); const events = (await response.text()).trim().split('\n').map(JSON.parse);
+  const response = await request('/turn', turn); assert.equal(response.status, 200); const events = (await response.text()).trim().split('\n').map(line => JSON.parse(line));
   assert.equal(events.at(-1).status, 'completed'); assert.equal(events.find(event => event.type === 'delta').text, 'A sourced answer.');
   const start = calls.find(call => call.method === 'thread/start').params; assert.equal(start.model, 'gpt-6.1-sol'); assert.equal(start.sandbox, 'read-only'); assert.equal(start.approvalPolicy, 'never'); assert.deepEqual(start.dynamicTools, turn.tools);
   const inference = calls.find(call => call.method === 'turn/start').params; assert.equal(inference.model, 'gpt-6.1-sol'); assert.equal(inference.effort, 'medium');

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { deduplicatePreloads } from '../scripts/node-options.mjs';
+import { deduplicatePreloads } from '../scripts/node-options.ts';
 
 test('duplicate company registry preloads are retained once', () => {
   const hook = '/Library/sec_registry/npm-registry-hook.js';

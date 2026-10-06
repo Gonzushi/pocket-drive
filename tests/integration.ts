@@ -1,3 +1,4 @@
+import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
@@ -12,8 +13,8 @@ import { DatabaseSync } from 'node:sqlite';
 test('production storage API', { timeout: 120000 }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'pocket-drive-test-'));
   const password = randomBytes(20).toString('hex'); const salt = randomBytes(16).toString('hex');
-  const probe = createServer(); await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));
-  const port = probe.address().port; await new Promise(resolve => probe.close(resolve));
+  const probe = createServer(); await new Promise<void>(resolve => probe.listen(0, '127.0.0.1', resolve));
+  const port = (probe.address() as AddressInfo).port; await new Promise<void>(resolve => probe.close(() => resolve()));
   const origin = `http://localhost:${port}`;
   const address = `http://127.0.0.1:${port}`;
   let processHandle; let output = '';
@@ -24,13 +25,13 @@ test('production storage API', { timeout: 120000 }, async t => {
     for (let tries = 0; tries < 150; tries++) {
       try { const result = await fetch(address + '/api/health', { signal: AbortSignal.timeout(1000) }); if (result.ok) return; output += await result.text(); } catch {}
       if (processHandle.exitCode !== null) throw new Error(output);
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise<void>(resolve => setTimeout(resolve, 100));
     }
     throw new Error('Test server did not start: ' + output);
   }
   async function stop() {
     if (!processHandle || processHandle.exitCode !== null) return;
-    const done = new Promise(resolve => processHandle.once('exit', resolve)); processHandle.kill('SIGTERM'); await done;
+    const done = new Promise<void>(resolve => processHandle.once('exit', resolve)); processHandle.kill('SIGTERM'); await done;
   }
   t.after(async () => { await stop(); await rm(root, { recursive: true, force: true }); });
   const legacyId = '00000000-0000-4000-8000-000000000003';
@@ -40,11 +41,11 @@ test('production storage API', { timeout: 120000 }, async t => {
   legacy.close(); await mkdir(join(root, 'files')); await writeFile(join(root, 'files', legacyId), 'legacy');
   await start();
   let cookie; let token; let keyId;
-  const send = (path, options = {}) => fetch(address + path, { signal: AbortSignal.timeout(10000), ...options });
-  const session = (path, options = {}) => send(path, { ...options, headers: { Cookie: cookie, Origin: origin, ...options.headers } });
-  const key = (path, options = {}) => send(path, { ...options, headers: { Authorization: `Bearer ${token}`, ...options.headers } });
+  const send = (path, options: RequestInit = {}) => fetch(address + path, { signal: AbortSignal.timeout(10000), ...options });
+  const session = (path, options: RequestInit = {}) => send(path, { ...options, headers: { Cookie: cookie, Origin: origin, ...options.headers } });
+  const key = (path, options: RequestInit = {}) => send(path, { ...options, headers: { Authorization: `Bearer ${token}`, ...options.headers } });
   const multipart = (bytes, name = 'report.pdf', field = 'file') => { const data = new FormData(); data.append(field, new Blob([bytes]), name); return data; };
-  const json = value => ({ 'Content-Type': 'application/json' });
+  const json = (value?: unknown) => ({ 'Content-Type': 'application/json' });
   await t.test('private routes and login / CSRF', async () => {
     assert.equal((await send('/api/files')).status, 401);
     assert.equal((await send('/files', { redirect: 'manual' })).status, 307);
@@ -328,12 +329,12 @@ test('production storage API', { timeout: 120000 }, async t => {
     partial.on('error',()=>{}); partial.write('unconfirmed');
     try {
       let busy=false;
-      for(let i=0;i<40;i++){busy=(await (await session(`/api/uploads/${id}`)).json()).busy;if(busy)break;await new Promise(resolve=>setTimeout(resolve,25));}
+      for(let i=0;i<40;i++){busy=(await (await session(`/api/uploads/${id}`)).json()).busy;if(busy)break;await new Promise<void>(resolve =>setTimeout(resolve,25));}
       assert(busy);
       assert.equal((await session(`/api/uploads/${id}`,{method:'PATCH',headers:{'Content-Type':'application/octet-stream','Upload-Offset':'0'},body:'competing'})).status,409);
     } finally { partial.destroy(); }
     let resumed;
-    for(let i=0;i<40;i++){resumed=await (await session(`/api/uploads/${id}`)).json();if(!resumed.busy)break;await new Promise(resolve=>setTimeout(resolve,25));}
+    for(let i=0;i<40;i++){resumed=await (await session(`/api/uploads/${id}`)).json();if(!resumed.busy)break;await new Promise<void>(resolve =>setTimeout(resolve,25));}
     assert.equal(resumed.busy,false);assert.equal(resumed.offset,0);assert.equal((await readFile(join(root,'tmp',id))).length,0);
     const database=new DatabaseSync(join(root,'metadata.sqlite'));
     database.prepare('UPDATE uploads SET lease_token=?,lease_until=? WHERE id=?').run(randomUUID(),Date.now()+60000,id);

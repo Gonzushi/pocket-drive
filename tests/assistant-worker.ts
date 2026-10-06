@@ -1,3 +1,4 @@
+import type { AddressInfo } from 'node:net';
 import { createServer } from 'node:http';
 
 // Deterministic transport fixture. It never impersonates a real model in production.
@@ -33,12 +34,12 @@ export async function fakeWorker(origin, secret) {
         if (id) await tool('read_document', { file_id: id });
       }
       response.write(JSON.stringify({ type: 'delta', text: 'The project document says **orchard**. ' }) + '\n');
-      await new Promise(resolve => setTimeout(resolve, 250));
+      await new Promise<void>(resolve => setTimeout(resolve, 250));
       if (response.destroyed) return;
       response.end(JSON.stringify({ type: 'delta', text: 'Source: project.txt, Lines 1–2.' }) + '\n' + JSON.stringify({ type: 'completed', status: 'completed' }) + '\n');
     } catch (error) { if (!response.destroyed) response.end(JSON.stringify({ type: 'completed', status: 'failed', error: error.message }) + '\n'); }
     finally { if (active === response) active = null; }
   });
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  return { server, requests, results, url: 'http://127.0.0.1:' + server.address().port, close: () => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }) };
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  return { server, requests, results, url: 'http://127.0.0.1:' + (server.address() as AddressInfo).port, close: () => new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()); }) };
 }

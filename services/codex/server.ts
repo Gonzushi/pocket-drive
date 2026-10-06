@@ -1,17 +1,24 @@
-import http from 'node:http';
+import http, { type IncomingMessage, type ServerResponse } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
-import { productionCodex } from './protocol.mjs';
+import { productionCodex, type CodexClient } from './protocol.ts';
 import { fileURLToPath } from 'node:url';
 
-export function createWorker(codex, { secret, callback, statePath = '/state' }) {
+interface WorkerSettings { secret: string; callback: string; statePath?: string }
+interface ActiveTurn {
+  response: ServerResponse; runId: string; capability: string;
+  tools: { name: string; [key: string]: unknown }[]; calls: number;
+  threadId: string | null; turnId: string | null; timer: NodeJS.Timeout;
+}
+export function createWorker(codex: CodexClient, { secret, callback: callbackAddress, statePath = '/state' }: WorkerSettings) {
 if (secret.length < 32) throw new Error('ASSISTANT_WORKER_SECRET must contain at least 32 characters.');
-callback = new URL(callback);
+const callback = new URL(callbackAddress);
 if (!['http:', 'https:'].includes(callback.protocol) || callback.username || callback.password) throw new Error('Invalid POCKET_DRIVE_URL.');
-let active = null; let login = null;
-function equal(a, b) { const x = Buffer.from(a); const y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); }
-function json(response, status, value) { response.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); response.end(JSON.stringify(value)); }
-function emit(value) { if (active && !active.response.destroyed) active.response.write(JSON.stringify(value) + '\n'); }
-function finish(status, error) {
+let active: ActiveTurn | null = null;
+let login: { verificationUrl: string; userCode: string } | null = null;
+function equal(a: string, b: string) { const x = Buffer.from(a); const y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); }
+function json(response: ServerResponse, status: number, value: unknown) { response.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); response.end(JSON.stringify(value)); }
+function emit(value: unknown) { if (active && !active.response.destroyed) active.response.write(JSON.stringify(value) + '\n'); }
+function finish(status: string, error?: string) {
   if (!active) return;
   const current = active; emit({ type: 'completed', status, error }); clearTimeout(current.timer); active = null; current.response.end();
 }
@@ -45,11 +52,11 @@ codex.on('request', async request => {
     const response = await fetch(new URL('/api/assistant/tools', callback), { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + current.capability }, body: JSON.stringify({ tool, arguments: request.params.arguments }), signal: AbortSignal.timeout(90000) });
     result = await response.json(); success = response.ok;
     if (active !== current) throw new Error('Reply stopped.');
-  } catch (error) { result = { error: error.message }; }
+  } catch (error) { result = { error: error instanceof Error ? error.message : 'Tool request failed.' }; }
   try { codex.reply(request.id, { contentItems: [{ type: 'inputText', text: JSON.stringify(result) }], success }); } catch {}
 });
-async function read(request) {
-  let size = 0; const chunks = [];
+async function read(request: IncomingMessage) {
+  let size = 0; const chunks: Buffer[] = [];
   for await (const chunk of request) { size += chunk.length; if (size > 128 * 1024) throw new Error('Request is too large.'); chunks.push(chunk); }
   const result = JSON.parse(Buffer.concat(chunks).toString());
   if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('Invalid request.'); return result;
@@ -92,14 +99,14 @@ const server = http.createServer(async (request, response) => {
         response.once('close', () => { if (active?.response === response) void cancel(); });
         const turn = await codex.call('turn/start', { threadId: active.threadId, model: 'gpt-6.1-sol', effort: 'medium', input: [{ type: 'text', text: data.text, text_elements: [] }] });
         if (active?.response === response) active.turnId = turn.turn.id;
-      } catch (error) { if (!response.headersSent) { clearTimeout(active?.timer); active = null; throw error; } finish('failed', error.message); }
+      } catch (error) { if (!response.headersSent) { clearTimeout(active?.timer); active = null; throw error; } finish('failed', error instanceof Error ? error.message : 'Codex request failed.'); }
       return;
     }
     json(response, 404, { error: 'Endpoint not found.' });
-  } catch (error) { if (!response.headersSent) json(response, 502, { error: String(error.message).slice(0, 500) }); else response.end(); }
+  } catch (error) { if (!response.headersSent) json(response, 502, { error: (error instanceof Error ? error.message : 'Codex request failed.').slice(0, 500) }); else response.end(); }
 });
 server.requestTimeout = 600000;
-return { server, async close() { await cancel(); codex.stop(); await new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }); } };
+return { server, async close() { await cancel(); codex.stop(); await new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()); }); } };
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const worker = createWorker(productionCodex(), { secret: process.env.ASSISTANT_WORKER_SECRET || '', callback: process.env.POCKET_DRIVE_URL || 'http://drive:3000', statePath: process.env.CODEX_STATE_PATH || '/state' });

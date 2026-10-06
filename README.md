@@ -20,6 +20,14 @@ The app filters Node's exact built-in SQLite experimental notice during module l
 
 For deployment, follow **[COOLIFY.md](COOLIFY.md)**. For API examples and response formats, see **[API.md](API.md)**.
 
+## TypeScript source
+
+Application code, the Codex service, scripts, tests, and the table preview worker are authored in TypeScript. Node 24 runs the server-side `.ts` scripts directly using native type stripping; `npm run typecheck` checks the application, runtime utilities, tests, browser worker, and Codex service. Production builds also check the migrated utilities and workers before packaging.
+
+`workers/preview-table-worker.ts` is emitted to `public/preview-table-worker.js` during asset preparation, since browsers run JavaScript. Generated Next.js output and third-party preview assets also remain JavaScript. The generated table worker is excluded from Git. Vendored UMD readers have their own CommonJS package scope so CSV/XLSX extraction works with the project's ESM configuration.
+
+The Codex image runs a strict TypeScript check and a real executable startup/status smoke check before deployment, then removes development dependencies. Its health check verifies the private authenticated status endpoint. To check it locally, run `npm ci`, `npm run build`, and `npm run smoke` inside `services/codex`. This smoke check uses temporary state and does not sign in or run model inference.
+
 ![The file dashboard, with sample files](docs/screenshots/dashboard-desktop.png)
 
 The screenshot shows isolated test data. Your new drive starts empty. Validation details are in **[VALIDATION.md](VALIDATION.md)**.
