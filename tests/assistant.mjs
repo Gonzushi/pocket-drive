@@ -88,4 +88,9 @@ test('personal assistant integration', { timeout: 120000 }, async t => {
   });
   await t.test('conversation, thread ID, index and login session survive a server restart', async () => { await stop(); await start(); const value = await (await request('chats/' + chat.id)).json(); assert.equal(value.chat.thread_id, 'fixture-thread-001'); assert(value.messages.length > 10); assert((await (await request('status')).json()).index.indexed >= 2); await send('Read project.txt'); });
   await t.test('restart marks unfinished replies interrupted', async () => { await post('chats/' + chat.id + '/messages', { text: 'wait forever' }); await stop(); await start(); const value = await (await request('chats/' + chat.id)).json(); assert.equal(value.runs[0].status, 'interrupted'); });
+  await t.test('deletes a saved conversation and its history', async () => {
+    const response = await request('chats/' + chat.id, { method: 'DELETE' }); assert.equal(response.status, 200, await response.clone().text()); assert.deepEqual(await response.json(), { success: true });
+    assert.equal((await request('chats/' + chat.id)).status, 404);
+    const list = await (await request('chats')).json(); assert(!list.chats.some(entry => entry.id === chat.id));
+  });
 });
