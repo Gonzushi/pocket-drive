@@ -91,4 +91,8 @@ test('private worker enforces personal auth, exact model, bounded tools and nati
   const start = calls.find(call => call.method === 'thread/start').params; assert.equal(start.model, 'gpt-6.1-sol'); assert.equal(start.sandbox, 'read-only'); assert.equal(start.approvalPolicy, 'never'); assert.deepEqual(start.dynamicTools, turn.tools);
   const inference = calls.find(call => call.method === 'turn/start').params; assert.equal(inference.model, 'gpt-6.1-sol'); assert.equal(inference.effort, 'medium');
   assert.equal(toolRequests[0].auth, 'Bearer signed-run-capability'); assert.equal(replies[0].value.success, true); assert.equal(replies[0].value.contentItems[0].type, 'inputText'); assert.equal(denied[0].error.code, -32601);
+  const resumed = await request('/turn', { ...turn, runId: 'run-2', threadId: 'thread-1', text: 'Count my videos' });
+  assert.equal(resumed.status, 200); await resumed.text();
+  const resume = calls.find(call => call.method === 'thread/resume').params;
+  assert.equal(resume.threadId, 'thread-1'); assert.deepEqual(resume.dynamicTools, turn.tools);
 });
