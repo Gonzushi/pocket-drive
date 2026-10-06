@@ -50,10 +50,16 @@ export class Codex extends EventEmitter {
   stop() { this.child?.kill('SIGTERM'); }
 }
 
-export function productionCodex() {
-  const home = process.env.CODEX_STATE_PATH || '/state';
+export function productionCodex(environment = process.env) {
+  const home = environment.CODEX_STATE_PATH || '/state';
+  // Preserve HTTPS routing and trust settings without giving Codex app secrets.
+  const network = Object.fromEntries([
+    'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY',
+    'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy',
+    'CODEX_CA_CERTIFICATE', 'SSL_CERT_FILE', 'SSL_CERT_DIR'
+  ].filter(name => environment[name]).map(name => [name, environment[name]]));
   const flags = ['shell_tool', 'unified_exec', 'apps', 'browser_use', 'computer_use', 'code_mode_host', 'remote_plugin', 'hooks', 'multi_agent', 'view_image'];
   return new Codex(path.resolve('node_modules/.bin/codex'), ['app-server', ...flags.flatMap(name => ['--disable', name]), '-c', 'web_search="disabled"', '-c', 'cli_auth_credentials_store="file"'], {
-    PATH: process.env.PATH, HOME: home, CODEX_HOME: home + '/codex', LANG: 'C.UTF-8', NODE_ENV: 'production'
+    ...network, PATH: environment.PATH, HOME: home, CODEX_HOME: home + '/codex', LANG: 'C.UTF-8', NODE_ENV: 'production'
   });
 }

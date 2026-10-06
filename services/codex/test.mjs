@@ -4,9 +4,29 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { once, EventEmitter } from 'node:events';
-import { Codex } from './protocol.mjs';
+import { Codex, productionCodex } from './protocol.mjs';
 import { createWorker } from './server.mjs';
 import { createServer } from 'node:http';
+
+test('Codex subprocess preserves HTTPS trust and routing without inheriting application secrets', async t => {
+  const home = await mkdtemp(tmpdir() + '/pocket-codex-network-');
+  const settings = {
+    CODEX_STATE_PATH: home, PATH: process.env.PATH,
+    HTTPS_PROXY: 'http://proxy.example:8080', NO_PROXY: 'drive,localhost',
+    https_proxy: 'http://proxy.example:8080', no_proxy: 'drive,localhost',
+    CODEX_CA_CERTIFICATE: '/custom/root.pem', SSL_CERT_FILE: '/etc/ssl/certs/ca-certificates.crt', SSL_CERT_DIR: '/etc/ssl/certs',
+    ASSISTANT_WORKER_SECRET: 'must-not-reach-codex', OPENAI_API_KEY: 'must-not-reach-codex',
+    NODE_TLS_REJECT_UNAUTHORIZED: '0'
+  };
+  const production = productionCodex(settings);
+  const client = new Codex(process.execPath, [fileURLToPath(new URL('./fixture.mjs', import.meta.url))], production.environment);
+  t.after(async () => { const stopped = client.child && once(client, 'stopped'); client.stop(); if (stopped) await stopped; await rm(home, { recursive: true, force: true }); });
+  await client.start();
+  const actual = await client.call('environment');
+  for (const name of ['HTTPS_PROXY', 'NO_PROXY', 'https_proxy', 'no_proxy', 'CODEX_CA_CERTIFICATE', 'SSL_CERT_FILE', 'SSL_CERT_DIR']) assert.equal(actual[name], settings[name]);
+  assert.equal(actual.HOME, home); assert.equal(actual.CODEX_HOME, home + '/codex');
+  for (const name of ['ASSISTANT_WORKER_SECRET', 'OPENAI_API_KEY', 'NODE_TLS_REJECT_UNAUTHORIZED']) assert.equal(actual[name], undefined);
+});
 
 test('Codex JSON-RPC transport handles concurrent calls, streaming, server tools and process failure', async t => {
   const home = await mkdtemp(tmpdir() + '/pocket-codex-');
