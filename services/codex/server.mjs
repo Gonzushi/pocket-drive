@@ -86,7 +86,7 @@ const server = http.createServer(async (request, response) => {
       const settings = { model: 'gpt-6.1-sol', sandbox: 'read-only', approvalPolicy: 'never', cwd: statePath + '/workspace', developerInstructions: data.instructions };
       active = { response, runId: data.runId, capability: data.capability, tools: data.tools, calls: 0, threadId: null, turnId: null, timer: setTimeout(() => { void cancel(); }, 8 * 60000) };
       try {
-        const result = await codex.call(data.threadId ? 'thread/resume' : 'thread/start', data.threadId ? { ...settings, threadId: data.threadId, excludeTurns: true } : { ...settings, dynamicTools: data.tools });
+        const result = await codex.call(data.threadId ? 'thread/resume' : 'thread/start', data.threadId ? { ...settings, threadId: data.threadId, excludeTurns: true, dynamicTools: data.tools } : { ...settings, dynamicTools: data.tools });
         active.threadId = result.thread.id;
         response.writeHead(200, { 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-store' }); emit({ type: 'thread', id: active.threadId });
         response.once('close', () => { if (active?.response === response) void cancel(); });
