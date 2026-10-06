@@ -20,7 +20,7 @@ test('Codex subprocess preserves HTTPS trust and routing without inheriting appl
     NODE_TLS_REJECT_UNAUTHORIZED: '0'
   };
   const production = productionCodex(settings);
-  assert(production.args.includes('code_mode.direct_only_tool_namespaces=["functions"]'));
+  assert(production.args.includes('features.code_mode.direct_only_tool_namespaces=["pocket_drive"]'));
   assert(production.args.some((value, index) => value === '--disable' && production.args[index + 1] === 'code_mode_host'));
   const client = new Codex(process.execPath, [fileURLToPath(new URL('./fixture.ts', import.meta.url))], production.environment);
   t.after(async () => { const stopped = client.child && once(client, 'stopped'); client.stop(); if (stopped) await stopped; await rm(home, { recursive: true, force: true }); });
@@ -63,7 +63,8 @@ test('private worker enforces personal auth, exact model, bounded tools and nati
           const threadId = params.threadId;
           this.emit('notification', { method: 'turn/started', params: { threadId, turn: { id: 'turn-1' } } });
           this.emit('request', { id: 'shell-1', method: 'item/commandExecution/requestApproval', params: { threadId } });
-          await new Promise<void>(resolve => { toolResult = resolve; this.emit('request', { id: 'tool-1', method: 'item/tool/call', params: { threadId, tool: 'search_files', arguments: { query: 'project' } } }); });
+          await new Promise<void>(resolve => { toolResult = resolve; this.emit('request', { id: 'wrong-namespace', method: 'item/tool/call', params: { threadId, namespace: 'functions', tool: 'search_files', arguments: { query: 'project' } } }); });
+          await new Promise<void>(resolve => { toolResult = resolve; this.emit('request', { id: 'tool-1', method: 'item/tool/call', params: { threadId, namespace: 'pocket_drive', tool: 'search_files', arguments: { query: 'project' } } }); });
           this.emit('notification', { method: 'item/agentMessage/delta', params: { threadId, turnId: 'turn-1', delta: 'A sourced answer.' } });
           this.emit('notification', { method: 'turn/completed', params: { threadId, turn: { id: 'turn-1', status: 'completed' } } });
         }, 10);
@@ -91,7 +92,7 @@ test('private worker enforces personal auth, exact model, bounded tools and nati
   const status = await (await request('/status')).json(); assert.equal(status.connected, true); assert.equal(status.account.accessToken, undefined);
   const response = await request('/turn', turn); assert.equal(response.status, 200); const events = (await response.text()).trim().split('\n').map(line => JSON.parse(line));
   assert.equal(events.at(-1).status, 'completed'); assert.equal(events.find(event => event.type === 'delta').text, 'A sourced answer.');
-  const start = calls.find(call => call.method === 'thread/start').params; assert.equal(start.model, 'gpt-6.1-sol'); assert.equal(start.sandbox, 'read-only'); assert.equal(start.approvalPolicy, 'never'); assert.deepEqual(start.dynamicTools, turn.tools);
+  const start = calls.find(call => call.method === 'thread/start').params; assert.equal(start.model, 'gpt-6.1-sol'); assert.equal(start.sandbox, 'read-only'); assert.equal(start.approvalPolicy, 'never'); assert.equal(start.dynamicTools[0].name, 'pocket_drive'); assert.deepEqual(start.dynamicTools[0].tools, turn.tools);
   const inference = calls.find(call => call.method === 'turn/start').params; assert.equal(inference.model, 'gpt-6.1-sol'); assert.equal(inference.effort, 'medium');
-  assert.equal(toolRequests[0].auth, 'Bearer signed-run-capability'); assert.equal(replies[0].value.success, true); assert.equal(replies[0].value.contentItems[0].type, 'inputText'); assert.equal(denied[0].error.code, -32601);
+  assert.equal(toolRequests.length, 1); assert.equal(toolRequests[0].auth, 'Bearer signed-run-capability'); assert.equal(replies[0].value.success, false); assert.equal(replies[1].value.success, true); assert.equal(replies[1].value.contentItems[0].type, 'inputText'); assert.equal(denied[0].error.code, -32601);
 });

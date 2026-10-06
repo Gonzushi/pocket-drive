@@ -4,6 +4,8 @@ import { mkdir } from 'node:fs/promises';
 import { EventEmitter } from 'node:events';
 import path from 'node:path';
 
+export const POCKET_DRIVE_NAMESPACE = 'pocket_drive';
+
 export interface RpcMessage {
   jsonrpc?: string;
   id?: string | number;
@@ -84,11 +86,11 @@ export function productionCodex(environment = process.env) {
     'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy',
     'CODEX_CA_CERTIFICATE', 'SSL_CERT_FILE', 'SSL_CERT_DIR'
   ].filter(name => environment[name]).map(name => [name, environment[name]]));
-  const flags = ['shell_tool', 'unified_exec', 'apps', 'browser_use', 'computer_use', 'code_mode_host', 'remote_plugin', 'hooks', 'multi_agent', 'view_image'];
+  const flags = ['shell_tool', 'unified_exec', 'apps', 'plugins', 'browser_use', 'computer_use', 'code_mode_host', 'remote_plugin', 'hooks', 'multi_agent', 'view_image'];
   // GPT-6.1 can route third-party tools through code mode. Keep Pocket Drive's
-  // top-level dynamic functions direct so they remain available while the code-mode
+  // document namespace direct so it remains available while the code-mode
   // host itself stays disabled and the worker keeps its fail-closed tool boundary.
-  return new Codex(path.resolve('node_modules/.bin/codex'), ['app-server', ...flags.flatMap(name => ['--disable', name]), '-c', 'code_mode.direct_only_tool_namespaces=["functions"]', '-c', 'web_search="disabled"', '-c', 'cli_auth_credentials_store="file"'], {
+  return new Codex(path.resolve('node_modules/.bin/codex'), ['app-server', ...flags.flatMap(name => ['--disable', name]), '-c', `features.code_mode.direct_only_tool_namespaces=["${POCKET_DRIVE_NAMESPACE}"]`, '-c', 'web_search="disabled"', '-c', 'cli_auth_credentials_store="file"'], {
     ...network, PATH: environment.PATH, HOME: home, CODEX_HOME: home + '/codex', LANG: 'C.UTF-8', NODE_ENV: 'production'
   });
 }

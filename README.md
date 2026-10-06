@@ -26,7 +26,7 @@ Application code, the Codex service, scripts, tests, and the table preview worke
 
 `workers/preview-table-worker.ts` is emitted to `public/preview-table-worker.js` during asset preparation, since browsers run JavaScript. Generated Next.js output and third-party preview assets also remain JavaScript. The generated table worker is excluded from Git. Vendored UMD readers have their own CommonJS package scope so CSV/XLSX extraction works with the project's ESM configuration.
 
-The Codex image runs a strict TypeScript check and a real executable startup/status smoke check before deployment, then removes development dependencies. Its health check verifies the private authenticated status endpoint. To check it locally, run `npm ci`, `npm run build`, and `npm run smoke` inside `services/codex`. This smoke check uses temporary state and does not sign in or run model inference.
+The Codex image runs a strict TypeScript check and real executable smoke checks before deployment, then removes development dependencies. These verify startup/status, direct document-tool exposure, authenticated callbacks, document text reaching the model request, and tools remaining available after thread resume. Its health check verifies the private authenticated status endpoint. To check it locally, run `npm ci`, `npm run build`, and `npm run smoke` inside `services/codex`. The smoke checks use temporary state and a local Responses fixture; they do not sign in, call OpenAI, or consume inference usage.
 
 ![The file dashboard, with sample files](docs/screenshots/dashboard-desktop.png)
 

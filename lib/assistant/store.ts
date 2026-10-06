@@ -3,7 +3,7 @@ import { db, transaction } from '../db';
 import { HttpError } from '../http';
 import { validId } from '../storage';
 
-export const ASSISTANT_TOOLSET_VERSION = '3';
+export const ASSISTANT_TOOLSET_VERSION = '4';
 let initialized = false;
 export function assistantDB() {
   const database = db();

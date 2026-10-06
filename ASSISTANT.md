@@ -58,6 +58,10 @@ The worker runs as UID/GID 1001 with no added Linux capabilities. Native shell/b
 
 Document sections you ask Codex to read are sent to OpenAI using your connected account. This is a personal, authenticated workspace integration, not a public chatbot serving unrelated users through your subscription.
 
+If a connected assistant reports that the tool host is disabled, redeploy **both drive and codex** from the latest commit. Document tools are registered as direct calls in the `pocket_drive` namespace using `features.code_mode.direct_only_tool_namespaces`; they do not depend on the disabled code-mode host. Existing conversations automatically get a fresh Codex thread on their next message when the toolset version changes, preserving their saved history. No disconnect or deletion of persistent state is needed.
+
 ## Verification
 
 Run `npm run build`, `npm run typecheck`, and `npm test`. The assistant integration tests use a clearly isolated deterministic worker fixture to exercise real website authentication, document readers, indexing, streaming persistence, organization permissions, cancellation and server restarts. Worker transport tests cover concurrent JSON-RPC messages, tool requests, notifications, failures and recovery. They do not spend subscription usage or claim to test model inference. A real-account end-to-end reply is a post-deployment check after personal sign-in.
+
+Run `npm run smoke` inside `services/codex` to exercise the installed Codex executable. A local Responses fixture verifies that the model request actually exposes `pocket_drive.read_document`, a tool invocation reaches the drive callback with the run capability, the returned document text reaches the next model request, and the reply streams through the worker. The check repeats after resuming the same thread and also runs during the worker image build. It makes no OpenAI requests and requires no account or API key.

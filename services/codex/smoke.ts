@@ -7,6 +7,7 @@ import { once } from 'node:events';
 import { productionCodex } from './protocol.ts';
 import { createWorker } from './server.ts';
 import type { AddressInfo } from 'node:net';
+import { documentToolSmoke } from './tool-smoke.ts';
 
 const state = await mkdtemp(join(tmpdir(), 'pocket-codex-smoke-'));
 const codex = productionCodex({ PATH: process.env.PATH, CODEX_STATE_PATH: state });
@@ -29,3 +30,5 @@ try {
   if (stopped) await stopped;
   await rm(state, { recursive: true, force: true });
 }
+
+await documentToolSmoke();

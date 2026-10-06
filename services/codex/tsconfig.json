@@ -18,6 +18,7 @@
   "include": [
     "protocol.ts",
     "server.ts",
-    "smoke.ts"
+    "smoke.ts",
+    "tool-smoke.ts"
   ]
 }

@@ -1,6 +1,6 @@
 import http, { type IncomingMessage, type ServerResponse } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
-import { productionCodex, type CodexClient } from './protocol.ts';
+import { productionCodex, POCKET_DRIVE_NAMESPACE, type CodexClient } from './protocol.ts';
 import { fileURLToPath } from 'node:url';
 
 interface WorkerSettings { secret: string; callback: string; statePath?: string }
@@ -47,7 +47,7 @@ codex.on('request', async request => {
   try {
     if (++current.calls > 40) throw new Error('The reply reached its document-tool limit.');
     const tool = request.params.tool;
-    if (!current.tools.some(entry => entry.name === tool)) throw new Error('This tool is not available.');
+    if (request.params.namespace !== POCKET_DRIVE_NAMESPACE || !current.tools.some(entry => entry.name === tool)) throw new Error('This tool is not available.');
     emit({ type: 'activity', tool });
     const response = await fetch(new URL('/api/assistant/tools', callback), { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + current.capability }, body: JSON.stringify({ tool, arguments: request.params.arguments }), signal: AbortSignal.timeout(90000) });
     result = await response.json(); success = response.ok;
@@ -90,10 +90,10 @@ const server = http.createServer(async (request, response) => {
       if (account?.type !== 'chatgpt') { json(response, 409, { error: 'Connect your personal Codex account first.' }); return; }
       if (active) { json(response, 409, { error: 'Codex is already replying.' }); return; }
       if (typeof data.text !== 'string' || data.text.length > 12000 || !Array.isArray(data.tools) || typeof data.capability !== 'string' || typeof data.runId !== 'string') { json(response, 400, { error: 'Invalid turn request.' }); return; }
-      const settings = { model: 'gpt-6.1-sol', sandbox: 'read-only', approvalPolicy: 'never', cwd: statePath + '/workspace', developerInstructions: data.instructions };
+      const settings = { model: 'gpt-6.1-sol', sandbox: 'read-only', approvalPolicy: 'never', cwd: statePath + '/workspace', developerInstructions: [data.instructions, 'Pocket Drive tools are direct calls in the pocket_drive namespace. Call pocket_drive.read_document to read file contents and pocket_drive.search_files to locate documents. These tools do not require the code-mode host. Verify availability by calling the appropriate Pocket Drive tool, even if earlier messages said the host was disabled.'].filter(Boolean).join('\n\n') };
       active = { response, runId: data.runId, capability: data.capability, tools: data.tools, calls: 0, threadId: null, turnId: null, timer: setTimeout(() => { void cancel(); }, 8 * 60000) };
       try {
-        const result = await codex.call(data.threadId ? 'thread/resume' : 'thread/start', data.threadId ? { ...settings, threadId: data.threadId, excludeTurns: true } : { ...settings, dynamicTools: data.tools });
+        const result = await codex.call(data.threadId ? 'thread/resume' : 'thread/start', data.threadId ? { ...settings, threadId: data.threadId, excludeTurns: true } : { ...settings, dynamicTools: [{ type: 'namespace', name: POCKET_DRIVE_NAMESPACE, description: 'Read, search and organize the user’s Pocket Drive documents.', tools: data.tools }] });
         active.threadId = result.thread.id;
         response.writeHead(200, { 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-store' }); emit({ type: 'thread', id: active.threadId });
         response.once('close', () => { if (active?.response === response) void cancel(); });
