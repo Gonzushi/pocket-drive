@@ -3,22 +3,13 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": [
-      "ESNext"
-    ],
-    "types": [
-      "node"
-    ],
+    "lib": ["ESNext"],
+    "types": ["node"],
     "strict": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "erasableSyntaxOnly": true,
     "skipLibCheck": true
   },
-  "include": [
-    "protocol.ts",
-    "server.ts",
-    "smoke.ts",
-    "tool-smoke.ts"
-  ]
+  "include": ["protocol.ts", "server.ts", "smoke.ts", "tool-smoke.ts"]
 }

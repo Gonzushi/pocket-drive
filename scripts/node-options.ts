@@ -2,25 +2,31 @@
 // incorrectly merges repeated --require values into one module filename.
 export function deduplicatePreloads(options = '') {
   const tokens = options.match(/(?:[^\s"]|"(?:\\.|[^"\\])*")+/g) || [];
-  const decode = token => token.replace(/"((?:\\.|[^"\\])*)"/g,
-    (_, value) => value.replace(/\\(["\\])/g, '$1'));
-  const seen = new Set();
-  const kept = [];
+  const decode = (token: string) =>
+    token.replace(/"((?:\\.|[^"\\])*)"/g, (_match: string, value: string) =>
+      value.replace(/\\(["\\])/g, '$1'),
+    );
+  const seen = new Set<string>();
+  const kept: string[] = [];
   let removed = 0;
   for (let i = 0; i < tokens.length; i++) {
     const token = decode(tokens[i]);
-    let module; let nextToken = false;
+    let preloadModule: string | undefined;
+    let nextToken = false;
     if (token === '--require' || token === '-r') {
-      if (i + 1 < tokens.length) { module = decode(tokens[i + 1]); nextToken = true; }
-    } else if (token.startsWith('--require=')) module = token.slice(10);
-    else if (token.startsWith('-r=')) module = token.slice(3);
-    if (module !== undefined) {
-      if (seen.has(module)) {
+      if (i + 1 < tokens.length) {
+        preloadModule = decode(tokens[i + 1]);
+        nextToken = true;
+      }
+    } else if (token.startsWith('--require=')) preloadModule = token.slice(10);
+    else if (token.startsWith('-r=')) preloadModule = token.slice(3);
+    if (preloadModule !== undefined) {
+      if (seen.has(preloadModule)) {
         removed++;
         if (nextToken) i++;
         continue;
       }
-      seen.add(module);
+      seen.add(preloadModule);
       kept.push(tokens[i]);
       if (nextToken) kept.push(tokens[++i]);
     } else kept.push(tokens[i]);

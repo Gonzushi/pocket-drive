@@ -18,11 +18,14 @@ try {
   await once(worker.server, 'listening');
   const address = worker.server.address() as AddressInfo;
   const response = await fetch(`http://127.0.0.1:${address.port}/status`, {
-    headers: { Authorization: 'Bearer ' + secret }, signal: AbortSignal.timeout(55000)
+    headers: { Authorization: 'Bearer ' + secret },
+    signal: AbortSignal.timeout(55000),
   });
-  if (!response.ok) throw new Error('Worker startup smoke check failed: ' + await response.text());
-  const status = await response.json() as { connected: boolean; model: string; effort: string };
-  if (status.connected !== false || status.model !== 'gpt-6.1-sol' || status.effort !== 'medium') throw new Error('Unexpected initial worker status.');
+  if (!response.ok)
+    throw new Error('Worker startup smoke check failed: ' + (await response.text()));
+  const status = (await response.json()) as { connected: boolean; model: string; effort: string };
+  if (status.connected !== false || status.model !== 'gpt-6.1-sol' || status.effort !== 'medium')
+    throw new Error('Unexpected initial worker status.');
   console.log('Codex worker startup and authenticated status endpoint passed.');
 } finally {
   const stopped = codex.child?.exitCode === null ? once(codex, 'stopped') : null;

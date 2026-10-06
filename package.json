@@ -13,7 +13,10 @@
     "setup": "node scripts/setup.ts",
     "test": "node --test tests/node-options.ts tests/sqlite-warning.ts tests/zip.ts tests/integration.ts tests/preview.ts tests/listing.ts tests/assistant.ts services/codex/test.ts",
     "predev": "node scripts/prepare-preview.ts",
-    "prebuild": "tsc -p tsconfig.runtime.json && tsc -p workers/tsconfig.json && npm --prefix services/codex run build && node scripts/prepare-preview.ts"
+    "prebuild": "tsc -p tsconfig.runtime.json && tsc -p workers/tsconfig.json && npm --prefix services/codex run build && node scripts/prepare-preview.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint . --max-warnings=0"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",
@@ -46,6 +49,9 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/yauzl": "3.4.0",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.3.8",
+    "prettier": "^3.9.9",
     "typescript": "^5.9.0"
   },
   "overrides": {

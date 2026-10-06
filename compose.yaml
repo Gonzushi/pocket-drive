@@ -5,7 +5,7 @@ services:
     build: .
     restart: unless-stopped
     expose:
-      - "3000"
+      - '3000'
     environment:
       APP_ORIGIN: ${APP_ORIGIN:?Set your HTTPS origin}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
@@ -24,7 +24,7 @@ services:
     build: ./services/codex
     restart: unless-stopped
     expose:
-      - "4400"
+      - '4400'
     environment:
       ASSISTANT_WORKER_SECRET: ${ASSISTANT_WORKER_SECRET:?Generate a separate assistant worker secret}
       POCKET_DRIVE_URL: http://drive:3000

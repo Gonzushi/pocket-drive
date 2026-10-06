@@ -16,5 +16,7 @@ cpSync('node_modules/papaparse/LICENSE', `${target}/PAPAPARSE-LICENSE.txt`);
 console.log('Local preview assets are ready.');
 
 // Emit browser-compatible JavaScript from the checked TypeScript worker source.
-const worker = ts.transpileModule(readFileSync("workers/preview-table-worker.ts", "utf8"), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } });
-writeFileSync("public/preview-table-worker.js", worker.outputText);
+const worker = ts.transpileModule(readFileSync('workers/preview-table-worker.ts', 'utf8'), {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+});
+writeFileSync('public/preview-table-worker.js', worker.outputText);

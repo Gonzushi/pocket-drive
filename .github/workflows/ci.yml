@@ -1,0 +1,39 @@
+name: Validate Pocket Drive
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install conversion dependencies
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg libreoffice-writer libreoffice-impress fonts-dejavu-core fonts-liberation poppler-utils util-linux
+      - run: npm ci
+      - run: npm ci --prefix services/codex
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
+      - run: npm --prefix services/codex run smoke
+      - name: Validate Compose
+        env:
+          APP_ORIGIN: https://drive.example.com
+          ADMIN_PASSWORD_HASH: ci-placeholder
+          SESSION_SECRET: ci-placeholder
+          ASSISTANT_WORKER_SECRET: ci-placeholder-ci-placeholder-ci-placeholder
+        run: docker compose config --quiet
+      - name: Build production images
+        run: docker build -t pocket-drive:ci . && docker build -t pocket-codex:ci services/codex

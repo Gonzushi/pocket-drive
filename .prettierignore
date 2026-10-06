@@ -1,0 +1,9 @@
+node_modules/
+.next/
+public/preview-assets/
+public/preview-table-worker.js
+storage/
+package-lock.json
+services/codex/package-lock.json
+next-env.d.ts
+docs/screenshots/
