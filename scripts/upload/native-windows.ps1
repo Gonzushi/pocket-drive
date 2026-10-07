@@ -8,7 +8,7 @@ function Save-Json($Path, $Value) {
     $temporary = "$Path.$([Guid]::NewGuid().ToString('N')).tmp"
     [IO.File]::WriteAllText($temporary, ($Value | ConvertTo-Json -Depth 30), $Utf8)
     try {
-        if ([IO.File]::Exists($Path)) { [IO.File]::Replace($temporary, $Path, $null) }
+        if ([IO.File]::Exists($Path)) { [IO.File]::Replace($temporary, $Path, ($temporary + '.backup')); [IO.File]::Delete($temporary + '.backup') }
         else { [IO.File]::Move($temporary, $Path) }
     } finally { if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Force } }
 }
@@ -109,7 +109,7 @@ $Worker = {
     function Save-Entry {
         $temp = "$StateFile.tmp"
         [IO.File]::WriteAllText($temp, ($Entry | ConvertTo-Json -Depth 20), $utf8)
-        if ([IO.File]::Exists($StateFile)) { [IO.File]::Replace($temp, $StateFile, $null) }
+        if ([IO.File]::Exists($StateFile)) { [IO.File]::Replace($temp, $StateFile, ($temp + '.backup')); [IO.File]::Delete($temp + '.backup') }
         else { [IO.File]::Move($temp, $StateFile) }
     }
     try {
@@ -295,4 +295,4 @@ function Main {
     if ($failed.Count) { $failure = Join-Path $ReportDirectory "pocket-drive-upload-failures-$job.json"; Save-Json $failure $report; Write-Host "Failure report: $failure"; return 1 }
     return 0
 }
-try { exit (Main) } catch { Write-Error $_.Exception.Message; exit 1 }
+try { exit (Main) } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }

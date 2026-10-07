@@ -16,7 +16,7 @@ function write(path, value) {
   if (!data.writeToFileAtomically(path, true)) throw Error('Cannot write ' + path);
 }
 function remove(path) {
-  fm.removeItemAtPathError(path, null);
+  fm.removeItemAtPathError(path, $());
 }
 function log(value) {
   $.NSFileHandle.fileHandleWithStandardError.writeData(
@@ -27,7 +27,7 @@ function uuid() {
   return ObjC.unwrap($.NSUUID.UUID.UUIDString).toLowerCase();
 }
 function attr(path) {
-  var value = fm.attributesOfItemAtPathError(path, null);
+  var value = fm.attributesOfItemAtPathError(path, $());
   if (!value) throw Error('Source is missing or unreadable: ' + path);
   return {
     type: ObjC.unwrap(value.objectForKey($.NSFileType)),
@@ -45,8 +45,8 @@ function processTask(command, args, input) {
   var tag = work + '/' + ++serial,
     out = tag + '.out',
     err = tag + '.err';
-  fm.createFileAtPathContentsAttributes(out, $.NSData.data, null);
-  fm.createFileAtPathContentsAttributes(err, $.NSData.data, null);
+  fm.createFileAtPathContentsAttributes(out, $.NSData.data, $());
+  fm.createFileAtPathContentsAttributes(err, $.NSData.data, $());
   var task = $.NSTask.alloc.init;
   task.launchPath = command;
   task.arguments = $(args);
@@ -189,7 +189,7 @@ function scan(path, reportDir) {
   while (stack.length) {
     var current = stack.pop();
     entries.push(record(current.path, current.relative, 'folder'));
-    var children = ObjC.deepUnwrap(fm.contentsOfDirectoryAtPathError(current.path, null));
+    var children = ObjC.deepUnwrap(fm.contentsOfDirectoryAtPathError(current.path, $()));
     if (!children) throw Error('Cannot read folder: ' + current.path);
     children.sort().forEach(function (name) {
       var child = current.path + '/' + name,
@@ -393,7 +393,7 @@ function run(argv) {
   if (!(concurrency >= 1 && concurrency <= 8 && concurrency === Math.floor(concurrency)))
     throw Error('Concurrency must be 1-8.');
   work = ObjC.unwrap($.NSTemporaryDirectory()) + 'pocket-native-' + uuid();
-  if (!fm.createDirectoryAtPathWithIntermediateDirectoriesAttributesError(work, true, null, null))
+  if (!fm.createDirectoryAtPathWithIntermediateDirectoriesAttributesError(work, true, $(), $()))
     throw Error('Cannot create temporary working directory.');
   var checkpoint =
     reportDir + '/pocket-drive-upload-progress-' + Date.now() + '-' + uuid().slice(0, 6) + '.json';
