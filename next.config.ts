@@ -2,6 +2,7 @@ import type { NextConfig } from 'next';
 const config: NextConfig = {
   output: 'standalone',
   poweredByHeader: false,
+  outputFileTracingIncludes: { '/api/*': ['./scripts/upload/uploader.py'] },
   serverExternalPackages: ['busboy', 'yauzl'],
   async headers() {
     return [

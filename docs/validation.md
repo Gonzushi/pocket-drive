@@ -51,3 +51,13 @@ The final preview browser check also verifies image zoom/fit, exact scroll resto
 The production build and all 45 tests pass. New API tests cover name/date/size/extension sorting before pagination, stable ordering across multiple pages, direct-folder and recursive searches, drive-wide search and legacy file-listing compatibility, current paths after renaming/moving folders, literal SQL wildcards, invalid options, missing folders, and read-only authorization. Files and persistent storage are not migrated or modified by this update.
 
 Chromium browser checks pass for URL-backed search/scope/sort/filter controls, result location links, loading more than 50 files, refresh preservation, app and native Back/Forward, restoring previously loaded pages and scroll after both navigation and reload, and opening a preview from global search. Mobile title-to-action spacing is at least 18 px. Layouts at 320, 390, 430, 950 and 1440 px show no horizontal overflow or browser errors. These checks use isolated temporary storage and generated test credentials, not the production drive. Actual Safari/iOS device testing and the Coolify redeploy remain deployment checks.
+
+## Terminal uploaders and API Keys navigation — 2026-10-07
+
+- Production build, strict TypeScript, zero-warning lint and formatting checks passed.
+- All 69 locally runnable TypeScript regression checks passed. The two LibreOffice-dependent checks remain unavailable on this machine.
+- Seven uploader integration tests passed against isolated production servers, including actual 1/3/8-worker uploads, byte verification, empty/nested folders, hidden files, multi-chunk uploads, resumed offsets, lost completion responses, failure-report retries, source-change rejection and concurrent quota reservations.
+- The downloaded Bash script completed an interactive PTY upload with quoted paths and a hidden key. Neither terminal output nor JSON reports contained the test key.
+- Both script downloads enforce session authentication, use attachment headers and private no-store responses; embedded Python compiles successfully.
+- Desktop/mobile browser checks passed for server-loaded keys (no initial GET /api/keys waterfall), create/revoke, both downloads, refresh and overflow. Local navigation to displayed keys measured about 150–165 ms; this is not a live VPS benchmark.
+- Native macOS and Windows runs remain unverified locally. PowerShell launch checks execute when pwsh is available; it is absent here. CI runs the Python integration suite alongside the existing production checks.

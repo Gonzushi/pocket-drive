@@ -27,6 +27,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
+      - run: python3 tests/uploader.py
       - run: npm --prefix services/codex run smoke
       - name: Validate Compose
         env:

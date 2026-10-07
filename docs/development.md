@@ -31,3 +31,5 @@ Build before integration tests: they start `.next/standalone/server.js`. Do not 
 Keep client imports inside `lib/client`, `lib/shared` and client components. Server APIs enforce authorization even when the UI hides a control. Use explicit types at data boundaries, readable functions and comments that explain constraints. Change API contracts, tool definitions, tests and docs together. Bump the assistant toolset version when its tool contract changes.
 
 Most source is TypeScript. Node 24 directly runs erasable `.ts` scripts. The ESLint configuration is `.mjs` because Node loads it as native ESM. Browser worker and vendor assets are generated JavaScript and ignored in Git. Do not edit generated files.
+
+The downloadable terminal uploader is authored in `scripts/upload/uploader.py` and embedded into Bash/PowerShell downloads by `lib/server/uploader-download.ts`. Python is required on the client computer, not for serving the scripts. Build first, then run `python3 tests/uploader.py` for its isolated server integration checks; CI runs these alongside the TypeScript tests.

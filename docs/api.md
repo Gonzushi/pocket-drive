@@ -296,3 +296,7 @@ Errors use JSON `{ "error": "Readable message" }`.
 | 507    | Insufficient file quota or disk headroom                                     |
 
 Browser-origin cross-site API access is not enabled. Bearer-key uploads are intended for server-side scripts, curl, n8n, and similar clients; do not embed a private key in another site's frontend JavaScript.
+
+## Downloadable terminal uploader
+
+The API Keys page offers authenticated macOS and Windows script downloads. See [terminal uploads](terminal-uploads.md) for path formats, concurrency and JSON report retries. The scripts use the existing resumable API; no new upload protocol is required.

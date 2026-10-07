@@ -58,6 +58,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               </Link>
               <Link
                 href="/keys"
+                prefetch={true}
                 className={pathname === '/keys' ? 'nav-item active' : 'nav-item'}
                 aria-current={pathname === '/keys' ? 'page' : undefined}
               >

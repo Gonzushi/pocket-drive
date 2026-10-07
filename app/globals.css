@@ -3794,3 +3794,29 @@ button.result-location:hover {
 .pro-code-view.dark .cm-panel.cm-search {
   color: #c9d1dc;
 }
+
+.uploader-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  margin: 20px 0;
+}
+.uploader-option {
+  min-width: 0;
+}
+.uploader-option h3 {
+  margin-bottom: 12px;
+}
+.uploader-option .code-card {
+  margin: 12px 0;
+}
+.uploader-option pre {
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 640px) {
+  .uploader-options {
+    grid-template-columns: 1fr;
+  }
+}

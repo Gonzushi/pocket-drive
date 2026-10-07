@@ -1,4 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
+import { listApiKeys } from './keys';
+import { uploaderDownload } from './uploader-download';
 import {
   authorize,
   checkOrigin,
@@ -217,17 +219,13 @@ export async function dispatch(req: Request, segments: string[]): Promise<Respon
         return json({ success: true });
       }
     }
+    if (route === 'keys/uploader' && method === 'GET') {
+      authorize(req, 'read', true);
+      return await uploaderDownload(new URL(req.url).searchParams.get('platform'));
+    }
     if (route === 'keys') {
       authorize(req, 'read', true);
-      if (method === 'GET')
-        return json({
-          keys: db()
-            .prepare(
-              'SELECT id, name, scopes, created_at, last_used_at FROM api_keys ORDER BY created_at DESC',
-            )
-            .all()
-            .map((key) => ({ ...key, scopes: JSON.parse(String(key.scopes)) })),
-        });
+      if (method === 'GET') return json({ keys: listApiKeys() });
       if (method === 'POST') {
         const data = await body(req);
         const name = typeof data.name === 'string' ? data.name.trim() : '';

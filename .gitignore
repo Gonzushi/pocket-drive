@@ -8,3 +8,6 @@ test-results/
 public/preview-assets/
 services/codex/state/
 public/preview-table-worker.js
+
+__pycache__/
+*.pyc

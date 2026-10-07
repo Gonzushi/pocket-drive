@@ -30,6 +30,7 @@ Open http://localhost:3000. Setup writes an ignored `.env.local` and prints your
 ## Features
 
 - Folder navigation, filename search, sorting, moving and renaming.
+- Downloadable macOS/Windows terminal uploaders with concurrency and JSON retry reports.
 - Refresh-safe resumable uploads and private downloads, including folder ZIP exports.
 - Image, PDF, code, Markdown, spreadsheet, Office and media previews.
 - A personal Codex assistant that reads and summarizes documents and, with permission, creates files/folders, edits text/code, renames and moves items.

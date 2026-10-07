@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   Check,
   Copy,
@@ -10,13 +10,15 @@ import {
   Trash2,
   ArrowUpRight,
   Code2,
+  Download,
+  RefreshCw,
 } from 'lucide-react';
 import { api, formatDate } from '@/lib/client/client';
 import type { ApiKey } from '@/lib/shared/types';
 import Modal from './modal';
-export default function Keys() {
-  const [keys, setKeys] = useState<ApiKey[]>([]);
-  const [loading, setLoading] = useState(true);
+export default function Keys({ initialKeys, origin }: { initialKeys: ApiKey[]; origin: string }) {
+  const [keys, setKeys] = useState<ApiKey[]>(initialKeys);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -27,12 +29,7 @@ export default function Keys() {
   const [target, setTarget] = useState<ApiKey | null>(null);
   const [copied, setCopied] = useState('');
   const [copyError, setCopyError] = useState('');
-  const [origin, setOrigin] = useState('https://files.yourdomain.com');
   const [example, setExample] = useState<'curl' | 'python'>('curl');
-  useEffect(() => {
-    setOrigin(window.location.origin);
-    reload();
-  }, []);
   async function reload() {
     setLoading(true);
     try {
@@ -174,7 +171,14 @@ export default function Keys() {
             </h2>
             <p className="small muted">Create a separate key for each script or app.</p>
           </div>
-          <ShieldCheck size={22} className="muted" />
+          <button
+            className="icon-button"
+            onClick={reload}
+            disabled={loading}
+            aria-label="Refresh API keys"
+          >
+            <RefreshCw size={20} />
+          </button>
         </div>
         {loading ? (
           <div className="empty-state">
@@ -224,6 +228,70 @@ export default function Keys() {
             ))}
           </div>
         )}
+      </section>
+      <section className="api-guide" aria-labelledby="uploader-title">
+        <div className="guide-heading">
+          <span className="stat-icon">
+            <Download size={23} />
+          </span>
+          <div>
+            <h2 id="uploader-title">Upload files or an entire folder.</h2>
+            <p className="muted small">
+              Create an upload-enabled key, download your script, then run it.
+            </p>
+          </div>
+        </div>
+        <div className="uploader-options">
+          {[
+            {
+              platform: 'macos',
+              label: 'macOS Terminal',
+              file: 'pocket-drive-upload.sh',
+              command: 'bash ~/Downloads/pocket-drive-upload.sh',
+            },
+            {
+              platform: 'windows',
+              label: 'Windows PowerShell',
+              file: 'pocket-drive-upload.ps1',
+              command:
+                'powershell -NoProfile -ExecutionPolicy Bypass -File "$HOME\\Downloads\\pocket-drive-upload.ps1"',
+            },
+          ].map((option) => (
+            <div className="uploader-option" key={option.platform}>
+              <h3>{option.label}</h3>
+              <a
+                className="button secondary"
+                href={`/api/keys/uploader?platform=${option.platform}`}
+                download={option.file}
+              >
+                <Download size={16} />
+                Download script
+              </a>
+              <div className="code-card">
+                <pre>
+                  <code>{option.command}</code>
+                </pre>
+              </div>
+              <button className="text-button" onClick={() => copy(option.command, option.platform)}>
+                {copied === option.platform ? 'Copied' : 'Copy run command'}
+              </button>
+            </div>
+          ))}
+        </div>
+        <p className="small muted">
+          Requires Python 3.9 or newer, with no additional packages. On Windows, install Python 3
+          first; on macOS, install it if <code>python3 --version</code> is unavailable.
+        </p>
+        <p className="small muted">
+          The script prompts for a hidden API key, shows file/folder path examples, and asks for 1–8
+          parallel uploads (default 3). Folder uploads preserve nested and empty folders. Hidden
+          files are included; symbolic links are skipped.
+        </p>
+        <p className="small muted">
+          Progress and failure JSON reports are saved beside the script, without your key. Run it
+          again and choose “Retry or resume from JSON report”. You need Read &amp; upload
+          permissions to preserve empty folders; file uploads need Upload permission only.
+        </p>
       </section>
       <section className="api-guide">
         <div className="guide-heading">
