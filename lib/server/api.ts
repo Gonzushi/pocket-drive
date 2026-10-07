@@ -221,7 +221,8 @@ export async function dispatch(req: Request, segments: string[]): Promise<Respon
     }
     if (route === 'keys/uploader' && method === 'GET') {
       authorize(req, 'read', true);
-      return await uploaderDownload(new URL(req.url).searchParams.get('platform'));
+      const query = new URL(req.url).searchParams;
+      return await uploaderDownload(query.get('platform'), query.get('variant'));
     }
     if (route === 'keys') {
       authorize(req, 'read', true);

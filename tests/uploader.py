@@ -236,6 +236,40 @@ class UploadTests(unittest.TestCase):
             self.assertIn("Download script", text)
             self.assertNotIn(self.key, text)
 
+    def test_native_downloads_and_shared_fingerprint(self):
+        for platform in ("macos", "windows"):
+            route = "/api/keys/uploader?platform=" + platform + "&variant=native"
+            with self.assertRaises(urllib.error.HTTPError) as unauth:
+                urllib.request.urlopen(self.server + route)
+            self.assertEqual(unauth.exception.code, 401)
+            req = urllib.request.Request(self.server + route, headers={"Cookie": self.cookie})
+            with urllib.request.urlopen(req) as response:
+                text = response.read().decode("utf-8")
+                self.assertIn("-native.", response.headers["Content-Disposition"])
+                self.assertIn("no-store", response.headers["Cache-Control"])
+                self.assertIn(self.server, text)
+                self.assertNotIn(self.key, text)
+                self.assertNotIn("__POCKET_DRIVE_", text)
+            if platform == "macos":
+                subprocess.run(["bash", "-n"], input=text.encode(), check=True)
+                source = text.split("<<'POCKET_DRIVE_JXA'\n", 1)[1].split("\nPOCKET_DRIVE_JXA", 1)[0]
+                subprocess.run(["node", "--check", "--input-type=commonjs"], input=source.encode(), check=True)
+            else:
+                self.assertIn("powershell -NoProfile", text)
+                self.assertNotIn("python", text.lower())
+        req = urllib.request.Request(self.server + "/api/keys/uploader?platform=macos&variant=invalid", headers={"Cookie": self.cookie})
+        with self.assertRaises(urllib.error.HTTPError) as invalid:
+            urllib.request.urlopen(req)
+        self.assertEqual(invalid.exception.code, 400)
+        file = self.root / "native fingerprint.sql"
+        file.write_bytes(b"select 7;")
+        entry = uploader.source_record(file, "")
+        entry["fingerprint"]["modified_ns"] = None
+        entry["fingerprint"]["modified"] = file.stat().st_mtime
+        job = self.make_job([entry])
+        self.assertEqual(job.run(1), 0)
+        self.assertEqual(entry["status"], "complete")
+
     def test_paths_symlinks_and_report_integrity(self):
         self.assertEqual(uploader.clean_path('"/tmp/path with spaces/"'), Path("/tmp/path with spaces"))
         directory = self.root / uuid.uuid4().hex

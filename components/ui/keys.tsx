@@ -245,23 +245,44 @@ export default function Keys({ initialKeys, origin }: { initialKeys: ApiKey[]; o
           {[
             {
               platform: 'macos',
-              label: 'macOS Terminal',
-              file: 'pocket-drive-upload.sh',
-              command: 'bash ~/Downloads/pocket-drive-upload.sh',
+              variant: 'native',
+              label: 'macOS · No Python',
+              file: 'pocket-drive-upload-native.sh',
+              command: 'bash ~/Downloads/pocket-drive-upload-native.sh',
+              requirement: 'Uses built-in macOS tools. Run in Terminal.',
             },
             {
               platform: 'windows',
-              label: 'Windows PowerShell',
+              variant: 'native',
+              label: 'Windows · No Python',
+              file: 'pocket-drive-upload-native.cmd',
+              command: '"%USERPROFILE%\\Downloads\\pocket-drive-upload-native.cmd"',
+              requirement: 'Run in Command Prompt. Uses built-in Windows PowerShell 5.1.',
+            },
+            {
+              platform: 'macos',
+              variant: 'python',
+              label: 'macOS · Python',
+              file: 'pocket-drive-upload.sh',
+              command: 'bash ~/Downloads/pocket-drive-upload.sh',
+              requirement: 'Requires Python 3.9 or newer. Run in Terminal.',
+            },
+            {
+              platform: 'windows',
+              variant: 'python',
+              label: 'Windows · Python',
               file: 'pocket-drive-upload.ps1',
               command:
                 'powershell -NoProfile -ExecutionPolicy Bypass -File "$HOME\\Downloads\\pocket-drive-upload.ps1"',
+              requirement: 'Requires Python 3.9 or newer. Run in PowerShell.',
             },
           ].map((option) => (
-            <div className="uploader-option" key={option.platform}>
+            <div className="uploader-option" key={option.platform + option.variant}>
               <h3>{option.label}</h3>
+              <p className="small muted">{option.requirement}</p>
               <a
                 className="button secondary"
-                href={`/api/keys/uploader?platform=${option.platform}`}
+                href={`/api/keys/uploader?platform=${option.platform}&variant=${option.variant}`}
                 download={option.file}
               >
                 <Download size={16} />
@@ -272,15 +293,18 @@ export default function Keys({ initialKeys, origin }: { initialKeys: ApiKey[]; o
                   <code>{option.command}</code>
                 </pre>
               </div>
-              <button className="text-button" onClick={() => copy(option.command, option.platform)}>
-                {copied === option.platform ? 'Copied' : 'Copy run command'}
+              <button
+                className="text-button"
+                onClick={() => copy(option.command, option.platform + option.variant)}
+              >
+                {copied === option.platform + option.variant ? 'Copied' : 'Copy run command'}
               </button>
             </div>
           ))}
         </div>
         <p className="small muted">
-          Requires Python 3.9 or newer, with no additional packages. On Windows, install Python 3
-          first; on macOS, install it if <code>python3 --version</code> is unavailable.
+          Choose “No Python” to use your computer’s built-in tools, or the Python version if you
+          already have Python 3.9 or newer. Every download is self-contained.
         </p>
         <p className="small muted">
           The script prompts for a hidden API key, shows file/folder path examples, and asks for 1–8

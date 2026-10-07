@@ -51,6 +51,11 @@ def fingerprint(path):
     return {"size": info.st_size, "modified_ns": info.st_mtime_ns, "sha256": checksum.hexdigest()}
 
 
+def same_contents(actual, expected):
+    # Native scripts cannot represent all OS nanosecond timestamps exactly.
+    return actual["size"] == expected["size"] and actual["sha256"] == expected["sha256"]
+
+
 def source_record(path, relative, kind="file"):
     entry = {"source": str(path), "relative_path": relative, "kind": kind,
              "upload_id": str(uuid.uuid4()), "status": "pending", "attempts": 0, "error": ""}
@@ -164,8 +169,11 @@ class Uploader:
             raise ValueError("Source is missing or is a symbolic link.")
         if entry["fingerprint"] is None:
             self.update(entry, fingerprint=fingerprint(path))
-        if fingerprint(path) != entry["fingerprint"]:
+        actual = fingerprint(path)
+        if not same_contents(actual, entry["fingerprint"]):
             raise ValueError("Source changed since this job. Start a new upload for this file.")
+        # Capture this attempt's exact local mtime for checks while sending chunks.
+        identity = actual
         route = "/api/uploads/" + entry["upload_id"]
         try:
             status = self.request("GET", route)
@@ -188,7 +196,7 @@ class Uploader:
                 if self.stopped.is_set():
                     raise InterruptedError("Upload stopped; use this report to resume.")
                 info = path.stat()
-                if (info.st_size, info.st_mtime_ns) != (entry["fingerprint"]["size"], entry["fingerprint"]["modified_ns"]):
+                if (info.st_size, info.st_mtime_ns) != (identity["size"], identity["modified_ns"]):
                     raise ValueError("Source changed during upload. Start a new upload for this file.")
                 data = source.read(min(status["chunk_size"], entry["fingerprint"]["size"] - offset))
                 if not data:
@@ -198,7 +206,7 @@ class Uploader:
                 with self.lock:
                     entry["offset"] = offset  # The server is authoritative after an interruption.
                     print(f"Uploading {path.name}: {offset}/{entry['fingerprint']['size']} bytes", flush=True)
-        if fingerprint(path) != entry["fingerprint"]:
+        if not same_contents(fingerprint(path), entry["fingerprint"]):
             raise ValueError("Source changed during upload. Start a new upload for this file.")
         self.completed(entry, self.request("POST", route + "/complete", {}))
 

@@ -38,3 +38,22 @@ jobs:
         run: docker compose config --quiet
       - name: Build production images
         run: docker build -t pocket-drive:ci . && docker build -t pocket-codex:ci services/codex
+
+  native-uploaders:
+    name: Native uploader (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # Python runs the isolated HTTP fixture; the downloaded scripts use OS tools only.
+      - run: python tests/native-uploaders.py

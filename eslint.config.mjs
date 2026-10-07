@@ -41,6 +41,18 @@ export default defineConfig([
     },
   },
   {
+    files: ['scripts/upload/native-macos.js'],
+    languageOptions: { globals: { ObjC: 'readonly', $: 'readonly', run: 'readonly' } },
+    // JXA invokes zero-argument Objective-C methods using property access.
+    rules: {
+      '@typescript-eslint/no-unused-expressions': 'off',
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { caughtErrors: 'none', varsIgnorePattern: '^run$' },
+      ],
+    },
+  },
+  {
     files: [
       'app/**/*.ts',
       'app/**/*.tsx',
